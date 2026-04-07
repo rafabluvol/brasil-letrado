@@ -19,6 +19,24 @@ export interface ErroFrequente {
   ultimaVez: string;
 }
 
+export interface SaebDescriptorPerformance {
+  descritor_saeb: string;
+  descricao: string;
+  taxa_acerto: number;
+  total_exercicios: number;
+  total_acertos: number;
+  nivel: "dominado" | "em_desenvolvimento" | "critico";
+  ultima_atualizacao: string | null;
+}
+
+export interface ProntidaoSaeb {
+  descritores_dominados: number;
+  descritores_criticos: string[];
+  descritores_em_desenvolvimento: string[];
+  taxa_geral: number;
+  pronto: boolean;
+}
+
 export interface StudentData {
   aluno_id: string;
   ano: string;
@@ -27,9 +45,11 @@ export interface StudentData {
   subtemas_recentes: string[];
   generos_recentes: string[];
   temas_recentes: string[];
+  habilidades_recentes: string[];
   total_atividades: number;
   total_xp: number;
   ultima_atividade: string | null;
+  saeb_performance?: SaebDescriptorPerformance[];
 }
 
 const STORAGE_KEY = "sabia_student_data";
@@ -42,7 +62,14 @@ function generateId(): string {
 export function getStudentData(): StudentData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Backward compat: ensure new fields have defaults for existing localStorage data
+      return {
+        ...parsed,
+        habilidades_recentes: parsed.habilidades_recentes ?? [],
+      };
+    }
   } catch {}
   return createDefaultStudent();
 }
@@ -61,6 +88,7 @@ function createDefaultStudent(): StudentData {
     subtemas_recentes: [],
     generos_recentes: [],
     temas_recentes: [],
+    habilidades_recentes: [],
     total_atividades: 0,
     total_xp: 0,
     ultima_atividade: null,
@@ -136,6 +164,9 @@ export async function trackActivityResult(result: ActivityResult): Promise<Stude
   }
   data.generos_recentes = [result.genero, ...data.generos_recentes].slice(0, MAX_RECENTES);
   data.temas_recentes = [result.tema, ...data.temas_recentes].slice(0, MAX_RECENTES);
+  if (result.habilidade_bncc) {
+    data.habilidades_recentes = [result.habilidade_bncc, ...data.habilidades_recentes].slice(0, MAX_RECENTES);
+  }
 
   // Counters
   data.total_atividades += 1;
@@ -287,4 +318,95 @@ export function getStudentLevel(data: StudentData): number {
   if (data.total_xp < 1000) return 4;
   if (data.total_xp < 1500) return 5;
   return Math.min(10, 5 + Math.floor((data.total_xp - 1500) / 500));
+}
+
+// ============================================================
+// Load full student data from Supabase (including SAEB performance)
+// ============================================================
+
+export async function loadFullStudentData(): Promise<StudentData> {
+  const base = getStudentData();
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return base;
+
+    // Fetch SAEB performance rows for this user
+    const { data: saebRows } = await supabase
+      .from("student_saeb_performance" as any)
+      .select("descritor_saeb, ano_escolar, total_exercicios, total_acertos, taxa_acerto, nivel, ultima_atualizacao")
+      .eq("user_id", user.id)
+      .order("descritor_saeb");
+
+    if (!saebRows?.length) return base;
+
+    // Fetch descriptor labels for the student's year
+    const { data: descRows } = await supabase
+      .from("saeb_descritores" as any)
+      .select("codigo, descricao, ano_escolar")
+      .eq("ano_escolar", base.ano || "5");
+
+    const descMap: Record<string, string> = {};
+    if (descRows) {
+      for (const d of descRows as { codigo: string; descricao: string; ano_escolar: string }[]) {
+        descMap[d.codigo] = d.descricao;
+      }
+    }
+
+    const saeb_performance: SaebDescriptorPerformance[] = (
+      saebRows as {
+        descritor_saeb: string;
+        ano_escolar: string;
+        total_exercicios: number;
+        total_acertos: number;
+        taxa_acerto: number;
+        nivel: "dominado" | "em_desenvolvimento" | "critico";
+        ultima_atualizacao: string | null;
+      }[]
+    ).map((row) => ({
+      descritor_saeb: row.descritor_saeb,
+      descricao: descMap[row.descritor_saeb] ?? row.descritor_saeb,
+      taxa_acerto: Number(row.taxa_acerto) || 0,
+      total_exercicios: row.total_exercicios,
+      total_acertos: row.total_acertos,
+      nivel: row.nivel,
+      ultima_atualizacao: row.ultima_atualizacao,
+    }));
+
+    return { ...base, saeb_performance };
+  } catch {
+    return base;
+  }
+}
+
+// ============================================================
+// Calculate SAEB readiness summary
+// ============================================================
+
+export function calcularProntidaoSaeb(data: StudentData): ProntidaoSaeb {
+  const perf = data.saeb_performance ?? [];
+
+  if (perf.length === 0) {
+    return {
+      descritores_dominados: 0,
+      descritores_criticos: [],
+      descritores_em_desenvolvimento: [],
+      taxa_geral: 0,
+      pronto: false,
+    };
+  }
+
+  const dominados = perf.filter((d) => d.nivel === "dominado");
+  const criticos = perf.filter((d) => d.nivel === "critico").map((d) => d.descritor_saeb);
+  const emDes = perf.filter((d) => d.nivel === "em_desenvolvimento").map((d) => d.descritor_saeb);
+  const totalDescritors = data.ano === "5" ? 15 : 11;
+  const taxa_geral = Math.round((dominados.length / totalDescritors) * 100);
+
+  return {
+    descritores_dominados: dominados.length,
+    descritores_criticos: criticos,
+    descritores_em_desenvolvimento: emDes,
+    taxa_geral,
+    pronto: taxa_geral >= 70,
+  };
 }

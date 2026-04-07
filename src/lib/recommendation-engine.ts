@@ -4,10 +4,12 @@
 
 import {
   StudentData,
+  SaebDescriptorPerformance,
   getAccuracyRate,
   getWeakestCategory,
   getOverallAccuracy,
   getStudentLevel,
+  calcularProntidaoSaeb,
 } from "./student-tracker";
 import {
   getSubtemaAleatorio,
@@ -41,6 +43,48 @@ export interface Recomendacao {
 export interface TutorInsight {
   tipo: "incentivo" | "dica" | "alerta" | "sugestao";
   texto: string;
+}
+
+// ============================================================
+// SAEB MODE — active for 5th graders in Sep/Oct/Nov
+// ============================================================
+
+function isSaebPreparationMode(ano: string): boolean {
+  const month = new Date().getMonth() + 1; // 1-12
+  return ano === "5" && [9, 10, 11].includes(month);
+}
+
+// Map SAEB descriptor code → generic weakness category for content selection
+const SAEB_PARA_CATEGORIA: Record<string, string> = {
+  D1: "interpretacao",
+  D2: "vocabulario",
+  D3: "interpretacao",
+  D4: "interpretacao",
+  D5: "interpretacao",
+  D6: "gramatica",
+  D7: "vocabulario",
+  D8: "interpretacao",
+  D9: "interpretacao",
+  D10: "interpretacao",
+  D11: "interpretacao",
+  D12: "gramatica",
+  D13: "interpretacao",
+  D14: "interpretacao",
+  D15: "vocabulario",
+};
+
+function getWeakestSaebDescriptor(
+  saebPerf: SaebDescriptorPerformance[]
+): SaebDescriptorPerformance | null {
+  if (!saebPerf.length) return null;
+  // Prioritize: critico > em_desenvolvimento, then lowest taxa_acerto
+  const sorted = [...saebPerf].sort((a, b) => {
+    const nivelOrder = { critico: 0, em_desenvolvimento: 1, dominado: 2 };
+    const nivelDiff = nivelOrder[a.nivel] - nivelOrder[b.nivel];
+    if (nivelDiff !== 0) return nivelDiff;
+    return a.taxa_acerto - b.taxa_acerto;
+  });
+  return sorted[0];
 }
 
 // ============================================================
@@ -105,11 +149,19 @@ function selectTemaForWeakness(
 export function generateRecomendacao(data: StudentData): Recomendacao | null {
   const ano = data.ano || "3";
 
-  // 1. Analyze performance
-  const weakest = getWeakestCategory(data);
+  // 1. SAEB mode: 5th graders in Sep/Oct/Nov → prioritize weak SAEB descriptors
+  const saebMode = isSaebPreparationMode(ano);
+  const weakSaebDescriptor = saebMode
+    ? getWeakestSaebDescriptor(data.saeb_performance ?? [])
+    : null;
+
+  // 2. Analyze performance — use SAEB-derived category when in SAEB mode
+  const weakest = weakSaebDescriptor
+    ? (SAEB_PARA_CATEGORIA[weakSaebDescriptor.descritor_saeb] ?? getWeakestCategory(data))
+    : getWeakestCategory(data);
   const overallRate = getOverallAccuracy(data);
 
-  // 2. Select tema based on weakness
+  // 3. Select tema based on weakness
   const tema = selectTemaForWeakness(weakest, data.erros_frequentes, data.temas_recentes);
 
   // 3. Select subtema avoiding recent ones
@@ -135,9 +187,11 @@ export function generateRecomendacao(data: StudentData): Recomendacao | null {
     gramatica: "praticar gramática contextualizada no texto",
   };
 
-  const motivo = overallRate > 80
-    ? `avançar nos estudos e explorar ${subtemaDisplay}`
-    : `${MOTIVOS[weakest]} com o tema ${subtemaDisplay}`;
+  const motivo = weakSaebDescriptor
+    ? `praticar o ${weakSaebDescriptor.descritor_saeb} do SAEB (${weakSaebDescriptor.descricao.toLowerCase()}) com o tema ${subtemaDisplay}`
+    : overallRate > 80
+      ? `avançar nos estudos e explorar ${subtemaDisplay}`
+      : `${MOTIVOS[weakest]} com o tema ${subtemaDisplay}`;
 
   // 6. Enrich with habilidade details
   const habilidades = getHabilidadesPorMateria(ano, tema);
@@ -251,6 +305,34 @@ export function generateTutorInsights(data: StudentData): TutorInsight[] {
       tipo: "incentivo",
       texto: `Você já leu em voz alta ${data.performance.leitura.tentativas} vezes! Isso faz muita diferença na fluência! 🎯`,
     });
+  }
+
+  // SAEB-specific insights (5th graders in Sep/Oct/Nov)
+  if (isSaebPreparationMode(data.ano || "")) {
+    const prontidao = calcularProntidaoSaeb(data);
+    const weakDesc = getWeakestSaebDescriptor(data.saeb_performance ?? []);
+
+    if (prontidao.descritores_criticos.length > 0 && weakDesc) {
+      insights.push({
+        tipo: "alerta",
+        texto: `🎯 SAEB se aproxima! Você ainda precisa de atenção no ${weakDesc.descritor_saeb}: "${weakDesc.descricao}". Vamos treinar isso hoje?`,
+      });
+    } else if (prontidao.pronto) {
+      insights.push({
+        tipo: "incentivo",
+        texto: `🏆 Parabéns! Você domina ${prontidao.descritores_dominados} descritores do SAEB (${prontidao.taxa_geral}%)! Continue assim!`,
+      });
+    } else if (data.saeb_performance?.length) {
+      insights.push({
+        tipo: "sugestao",
+        texto: `📋 Para o SAEB: você domina ${prontidao.descritores_dominados} de ${data.ano === "5" ? 15 : 11} descritores. Ainda dá tempo de melhorar! 💪`,
+      });
+    } else {
+      insights.push({
+        tipo: "dica",
+        texto: `📋 O SAEB está chegando! Complete mais atividades para eu identificar quais descritores precisam de reforço.`,
+      });
+    }
   }
 
   // Level progress
