@@ -1,0 +1,1 @@
+ALTER TABLE public.student_books ADD COLUMN autor TEXT DEFAULT 'Jovem Autor';

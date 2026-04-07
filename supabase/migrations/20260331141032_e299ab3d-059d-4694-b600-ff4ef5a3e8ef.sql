@@ -1,0 +1,14 @@
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $$
+BEGIN
+  INSERT INTO public.profiles (user_id, nome)
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'nome', NULL));
+  INSERT INTO public.student_performance (user_id)
+  VALUES (NEW.id);
+  RETURN NEW;
+END;
+$$;

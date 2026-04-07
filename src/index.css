@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@layer base {
+  :root {
+    --background: 220 38% 94%;
+    --foreground: 220 20% 30%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 30%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 30%;
+
+    --primary: 145 70% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 45 90% 55%;
+    --secondary-foreground: 30 50% 15%;
+
+    --muted: 45 30% 92%;
+    --muted-foreground: 220 15% 50%;
+
+    --accent: 200 85% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 35 90% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 45 20% 88%;
+    --input: 45 20% 88%;
+    --ring: 145 70% 40%;
+
+    --radius: 1rem;
+
+    /* Custom educational tokens */
+    --success: 160 65% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 42 95% 55%;
+    --warning-foreground: 30 50% 15%;
+    --info: 200 85% 55%;
+    --info-foreground: 0 0% 100%;
+    --xp: 200 80% 50%;
+    --xp-foreground: 0 0% 100%;
+    --tutor: 145 65% 45%;
+    --tutor-foreground: 0 0% 100%;
+    --tutor-bg: 145 40% 96%;
+
+    --gradient-hero: linear-gradient(135deg, hsl(145, 65%, 45%), hsl(50, 85%, 55%), hsl(200, 80%, 50%));
+    --gradient-warm: linear-gradient(135deg, hsl(45, 90%, 55%), hsl(35, 85%, 50%));
+    --gradient-cool: linear-gradient(135deg, hsl(200, 80%, 50%), hsl(220, 70%, 55%));
+    --gradient-xp: linear-gradient(135deg, hsl(145, 65%, 45%), hsl(50, 85%, 55%), hsl(200, 80%, 50%));
+    --gradient-tutor: linear-gradient(135deg, hsl(200, 80%, 50%), hsl(220, 70%, 55%));
+
+    --shadow-card: 0 4px 20px -4px hsl(220 20% 30% / 0.08);
+    --shadow-elevated: 0 8px 30px -6px hsl(220 20% 30% / 0.12);
+    --shadow-tutor: 0 8px 40px -8px hsl(200 80% 50% / 0.3);
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  .btn-hero {
+    @apply px-8 py-4 rounded-2xl font-bold text-lg tracking-wide text-white;
+    background: linear-gradient(135deg, hsl(145, 65%, 45%), hsl(50, 85%, 55%), hsl(200, 80%, 50%));
+    box-shadow: 0 4px 15px -3px hsl(145 65% 45% / 0.4);
+    transition: all 0.2s ease;
+  }
+  .btn-hero:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -3px hsl(var(--primary) / 0.5);
+  }
+
+  .btn-warm {
+    @apply px-6 py-3 rounded-xl font-bold;
+    background: var(--gradient-warm);
+    color: hsl(var(--secondary-foreground));
+    box-shadow: 0 4px 15px -3px hsl(var(--secondary) / 0.4);
+    transition: all 0.2s ease;
+  }
+  .btn-warm:hover {
+    transform: translateY(-2px);
+  }
+
+  .card-edu {
+    @apply rounded-2xl p-6;
+    background: hsl(var(--card));
+    box-shadow: var(--shadow-card);
+    transition: all 0.2s ease;
+  }
+  .card-edu:hover {
+    box-shadow: var(--shadow-elevated);
+    transform: translateY(-2px);
+  }
+
+  .badge-xp {
+    @apply px-3 py-1 rounded-full text-sm font-bold;
+    background: var(--gradient-xp);
+    color: hsl(var(--xp-foreground));
+  }
+
+  .tutor-bubble {
+    @apply rounded-2xl p-4;
+    background: hsl(var(--tutor-bg));
+    border: 2px solid hsl(var(--tutor) / 0.2);
+  }
+
+  .progress-bar {
+    @apply h-3 rounded-full overflow-hidden;
+    background: hsl(var(--muted));
+  }
+  .progress-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+    background: var(--gradient-hero);
+  }
+
+  /* Tutor idle animations */
+  @keyframes tutor-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  @keyframes tutor-wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-4deg); }
+    75% { transform: rotate(4deg); }
+  }
+  @keyframes tutor-wave {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    15% { transform: rotate(-8deg) scale(1.05); }
+    30% { transform: rotate(6deg) scale(1.02); }
+    45% { transform: rotate(-4deg) scale(1.04); }
+    60% { transform: rotate(3deg) scale(1); }
+  }
+  @keyframes tutor-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+  @keyframes tutor-peek {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    30% { transform: translateY(-8px) rotate(-3deg); }
+    60% { transform: translateY(-4px) rotate(2deg); }
+  }
+
+  .tutor-idle {
+    animation: tutor-breathe 3s ease-in-out infinite;
+  }
+  .tutor-idle:nth-child(1) { animation-delay: 0s; }
+
+  .tutor-anim-bounce { animation: tutor-bounce 1s ease-in-out 2; }
+  .tutor-anim-wiggle { animation: tutor-wiggle 0.6s ease-in-out 3; }
+  .tutor-anim-wave { animation: tutor-wave 1.2s ease-in-out 1; }
+  .tutor-anim-peek { animation: tutor-peek 1.4s ease-in-out 1; }
+}
+
+/* Powered by AI shimmer effect */
+@keyframes ai-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.powered-by-ai-shimmer {
+  transition: all 0.3s ease;
+}
+
+.powered-by-ai-shimmer:hover,
+*:hover > .powered-by-ai-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--muted-foreground)) 25%,
+    #38bdf8 40%,
+    #60a5fa 50%,
+    #818cf8 60%,
+    hsl(var(--muted-foreground)) 75%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: ai-shimmer 2s linear infinite;
+}

@@ -1,0 +1,1 @@
+ALTER TABLE public.student_books ADD COLUMN resumo TEXT DEFAULT '';
