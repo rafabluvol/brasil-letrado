@@ -178,21 +178,19 @@ export async function trackActivityResult(result: ActivityResult): Promise<Stude
         .eq("user_id", user.id)
         .single();
 
-      if (profile) {
-        const newXp = (profile.total_xp || 0) + result.xp;
-        const newAtividades = (profile.total_atividades || 0) + 1;
-        const newNivel = calculateLevel(newXp);
+      const newXp = (profile?.total_xp || 0) + result.xp;
+      const newAtividades = (profile?.total_atividades || 0) + 1;
+      const newNivel = calculateLevel(newXp);
 
-        await supabase
-          .from("profiles")
-          .update({
-            total_xp: newXp,
-            total_atividades: newAtividades,
-            nivel: newNivel,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", user.id);
-      }
+      await supabase
+        .from("profiles")
+        .upsert({
+          user_id: user.id,
+          total_xp: newXp,
+          total_atividades: newAtividades,
+          nivel: newNivel,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
 
       // 3. Update student_performance
       const { data: perf } = await supabase
@@ -201,32 +199,33 @@ export async function trackActivityResult(result: ActivityResult): Promise<Stude
         .eq("user_id", user.id)
         .single();
 
-      if (perf) {
-        const updates: Record<string, any> = {
-          updated_at: new Date().toISOString(),
-          leitura_tentativas: (perf.leitura_tentativas || 0) + (result.leitura_realizada ? 1 : 0),
-          erros_frequentes: data.erros_frequentes as any,
-          subtemas_recentes: data.subtemas_recentes as any,
-          generos_recentes: data.generos_recentes as any,
-          temas_recentes: data.temas_recentes as any,
-        };
-
-        // Increment category-specific counters
-        for (const ex of result.exercicios) {
-          const cat = ex.categoria;
-          if (cat === "interpretacao" || cat === "vocabulario" || cat === "gramatica") {
-            updates[`${cat}_total`] = (perf[`${cat}_total` as keyof typeof perf] as number || 0) + 1;
-            if (ex.acertou) {
-              updates[`${cat}_acertos`] = (perf[`${cat}_acertos` as keyof typeof perf] as number || 0) + 1;
-            }
-          }
+      const catDeltas: Record<string, { total: number; acertos: number }> = {};
+      for (const ex of result.exercicios) {
+        const cat = ex.categoria;
+        if (cat === "interpretacao" || cat === "vocabulario" || cat === "gramatica") {
+          if (!catDeltas[cat]) catDeltas[cat] = { total: 0, acertos: 0 };
+          catDeltas[cat].total += 1;
+          if (ex.acertou) catDeltas[cat].acertos += 1;
         }
-
-        await supabase
-          .from("student_performance")
-          .update(updates)
-          .eq("user_id", user.id);
       }
+
+      const perfUpdates: Record<string, any> = {
+        user_id: user.id,
+        updated_at: new Date().toISOString(),
+        leitura_tentativas: (perf?.leitura_tentativas || 0) + (result.leitura_realizada ? 1 : 0),
+        erros_frequentes: data.erros_frequentes as any,
+        subtemas_recentes: data.subtemas_recentes as any,
+        generos_recentes: data.generos_recentes as any,
+        temas_recentes: data.temas_recentes as any,
+      };
+      for (const [cat, delta] of Object.entries(catDeltas)) {
+        perfUpdates[`${cat}_total`] = (perf?.[`${cat}_total` as keyof typeof perf] as number || 0) + delta.total;
+        perfUpdates[`${cat}_acertos`] = (perf?.[`${cat}_acertos` as keyof typeof perf] as number || 0) + delta.acertos;
+      }
+
+      await supabase
+        .from("student_performance")
+        .upsert(perfUpdates, { onConflict: "user_id" });
     }
   } catch (err) {
     console.error("Erro ao salvar no banco:", err);
