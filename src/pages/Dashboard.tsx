@@ -4,7 +4,7 @@ import {
   Users, GraduationCap, School, TrendingUp, TrendingDown, Target,
   BookOpen, Award, Activity, Brain, BarChart3, Lightbulb, Trophy,
   ArrowLeft, ChevronDown, Sparkles, Zap, Eye, AlertTriangle,
-  Medal, Star, Filter, Database, UserCircle,
+  Medal, Star, Filter, Database, UserCircle, ClipboardCheck,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,6 +29,7 @@ const TABS = [
   { id: "escolas", label: "Escolas", icon: School },
   { id: "rankings", label: "Rankings", icon: Trophy },
   { id: "habilidades", label: "Habilidades BNCC", icon: Brain },
+  { id: "saeb", label: "Prontidão SAEB", icon: ClipboardCheck },
   { id: "insights", label: "Insights", icon: Lightbulb },
 ];
 
@@ -177,6 +178,30 @@ export default function Dashboard() {
       setLoadingMyData(false);
     });
   }, [user]);
+
+  // ─── SAEB performance data ───
+  const [saebPerformance, setSaebPerformance] = useState<any[]>([]);
+  const [saebDescritores, setSaebDescritores] = useState<any[]>([]);
+  const [loadingSaeb, setLoadingSaeb] = useState(false);
+
+  useEffect(() => {
+    if (!user || activeTab !== "saeb" || loadingMyData) return;
+    setLoadingSaeb(true);
+    const ano = myProfile?.ano_escolar || "5";
+    Promise.all([
+      supabase.from("student_saeb_performance" as any)
+        .select("*")
+        .eq("user_id", user.id),
+      supabase.from("saeb_descritores" as any)
+        .select("codigo, descricao, categoria, ano_escolar")
+        .eq("ano_escolar", ano)
+        .order("codigo"),
+    ]).then(([perfRes, descRes]: any[]) => {
+      if (perfRes.data) setSaebPerformance(perfRes.data);
+      if (descRes.data) setSaebDescritores(descRes.data);
+      setLoadingSaeb(false);
+    }).catch(() => setLoadingSaeb(false));
+  }, [user, activeTab, loadingMyData, myProfile?.ano_escolar]);
 
   const { alunos, professores, escolas } = useMemo(() => {
     if (!loaded) return { alunos: [] as Aluno[], professores: [] as Professor[], escolas: [] as Escola[] };
@@ -1094,6 +1119,246 @@ export default function Dashboard() {
                   </table>
                 </div>
               </ChartCard>
+            </motion.div>
+          )}
+
+          {/* ═══ PRONTIDÃO SAEB ═══ */}
+          {activeTab === "saeb" && (
+            <motion.div key="saeb" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {!user ? (
+                <div className="text-center py-16">
+                  <UserCircle size={48} className="mx-auto text-muted-foreground mb-4" />
+                  <h3 className="font-display text-xl text-foreground mb-2">Faça login para ver sua prontidão SAEB</h3>
+                  <p className="text-muted-foreground text-sm mb-4">Seus dados dos descritores aparecerão aqui.</p>
+                  <button onClick={() => navigate("/auth")} className="btn-hero px-6">Entrar</button>
+                </div>
+              ) : loadingSaeb ? (
+                <div className="text-center py-16">
+                  <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+                  <p className="text-muted-foreground">Carregando dados SAEB...</p>
+                </div>
+              ) : (() => {
+                const ano = myProfile?.ano_escolar || "5";
+                const totalDescritores = saebDescritores.length || (ano === "5" ? 15 : 11);
+
+                const STATUS_MAP: Record<string, { label: string; classes: string; barColor: string }> = {
+                  dominado:        { label: "Dominado",      classes: "bg-emerald-100 text-emerald-700", barColor: "hsl(145,70%,42%)" },
+                  em_desenvolvimento: { label: "Em Progresso", classes: "bg-amber-100 text-amber-700",   barColor: "hsl(48,95%,50%)" },
+                  critico:         { label: "Abaixo",        classes: "bg-red-100 text-red-700",         barColor: "hsl(340,75%,55%)" },
+                  nao_iniciado:    { label: "Não Iniciado",  classes: "bg-muted text-muted-foreground",  barColor: "hsl(var(--muted-foreground))" },
+                };
+
+                const saebRows = [...saebDescritores]
+                  .sort((a: any, b: any) => parseInt(a.codigo.slice(1)) - parseInt(b.codigo.slice(1)))
+                  .map((desc: any) => {
+                    const perf = saebPerformance.find((p: any) => p.descritor_saeb === desc.codigo);
+                    return {
+                      codigo: desc.codigo,
+                      descricao: desc.descricao,
+                      categoria: desc.categoria,
+                      taxa_acerto: perf ? Number(perf.taxa_acerto) : null,
+                      total_exercicios: perf?.total_exercicios || 0,
+                      nivel: (perf?.nivel as string) || "nao_iniciado",
+                    };
+                  });
+
+                const dominados = saebRows.filter(r => r.nivel === "dominado").length;
+                const taxaGeral = totalDescritores > 0 ? Math.round((dominados / totalDescritores) * 100) : 0;
+                const summaryBarColor = taxaGeral >= 70 ? "hsl(145,70%,42%)" : taxaGeral >= 40 ? "hsl(48,95%,50%)" : "hsl(340,75%,55%)";
+
+                const focusList = [...saebRows]
+                  .filter(r => r.nivel !== "dominado")
+                  .sort((a, b) => {
+                    const order: Record<string, number> = { critico: 0, em_desenvolvimento: 1, nao_iniciado: 2 };
+                    const nd = (order[a.nivel] ?? 3) - (order[b.nivel] ?? 3);
+                    if (nd !== 0) return nd;
+                    return (a.taxa_acerto ?? 101) - (b.taxa_acerto ?? 101);
+                  })
+                  .slice(0, 3);
+
+                return (
+                  <>
+                    {/* ── Greeting ── */}
+                    <div className="mb-5">
+                      <h3 className="font-display text-2xl text-foreground">
+                        Prontidão SAEB — {ano}º Ano
+                      </h3>
+                      <p className="text-muted-foreground text-sm mt-1">
+                        Acompanhe seu domínio sobre cada descritor avaliado pelo SAEB
+                      </p>
+                    </div>
+
+                    {/* ── Summary card ── */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4 }}
+                      className="bg-card rounded-2xl border border-border p-6 mb-4"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center gap-6">
+                        {/* Big number */}
+                        <div className="flex items-center gap-4">
+                          <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-white font-black text-2xl shrink-0"
+                            style={{ background: summaryBarColor }}>
+                            {taxaGeral}%
+                          </div>
+                          <div>
+                            <p className="font-black text-foreground text-lg leading-tight">
+                              {dominados} de {totalDescritores} descritores dominados
+                            </p>
+                            <p className="text-muted-foreground text-sm mt-0.5">
+                              {taxaGeral >= 70
+                                ? "Excelente! Você está pronto para o SAEB. 🏆"
+                                : taxaGeral >= 40
+                                  ? "Bom progresso! Continue treinando os descritores em amarelo e vermelho. 💪"
+                                  : saebRows.some(r => r.nivel !== "nao_iniciado")
+                                    ? "Você está começando. Foco nos descritores críticos primeiro! 🎯"
+                                    : "Complete atividades para mapear seu desempenho nos descritores. 📚"}
+                            </p>
+                          </div>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between text-xs font-semibold text-muted-foreground mb-1.5">
+                            <span>Progresso geral</span>
+                            <span>{taxaGeral}%</span>
+                          </div>
+                          <div className="h-4 bg-muted rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${taxaGeral}%` }}
+                              transition={{ duration: 1, ease: "easeOut" }}
+                              className="h-full rounded-full"
+                              style={{ background: `linear-gradient(90deg, ${summaryBarColor}, ${summaryBarColor}cc)` }}
+                            />
+                          </div>
+                          {/* Mini legend */}
+                          <div className="flex gap-4 mt-2">
+                            {[
+                              { label: "Dominado", count: saebRows.filter(r => r.nivel === "dominado").length, color: "bg-emerald-500" },
+                              { label: "Em Progresso", count: saebRows.filter(r => r.nivel === "em_desenvolvimento").length, color: "bg-amber-400" },
+                              { label: "Abaixo", count: saebRows.filter(r => r.nivel === "critico").length, color: "bg-red-500" },
+                              { label: "Não Iniciado", count: saebRows.filter(r => r.nivel === "nao_iniciado").length, color: "bg-muted-foreground/30" },
+                            ].map(item => (
+                              <div key={item.label} className="flex items-center gap-1">
+                                <span className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
+                                <span className="text-[10px] text-muted-foreground font-semibold">{item.count} {item.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+
+                    {/* ── Focar agora ── */}
+                    {focusList.length > 0 && (
+                      <ChartCard title="🎯 Focar Agora" subtitle="Os descritores que precisam de mais atenção" delay={0.15} className="mb-4">
+                        <div className="grid md:grid-cols-3 gap-3">
+                          {focusList.map((row, i) => {
+                            const st = STATUS_MAP[row.nivel] || STATUS_MAP.nao_iniciado;
+                            return (
+                              <motion.div
+                                key={row.codigo}
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2 + i * 0.06 }}
+                                className={`p-4 rounded-xl border ${
+                                  row.nivel === "critico" ? "border-red-200/60 bg-red-50/40" :
+                                  row.nivel === "em_desenvolvimento" ? "border-amber-200/60 bg-amber-50/40" :
+                                  "border-border bg-muted/30"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-lg font-black text-foreground">{row.codigo}</span>
+                                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${st.classes}`}>{st.label}</span>
+                                </div>
+                                <p className="text-xs text-foreground font-semibold leading-snug mb-2">{row.descricao}</p>
+                                <p className="text-[10px] text-muted-foreground mb-2">{row.categoria}</p>
+                                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                  <motion.div
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${row.taxa_acerto ?? 0}%` }}
+                                    transition={{ duration: 0.8, delay: 0.3 + i * 0.06 }}
+                                    className="h-full rounded-full"
+                                    style={{ background: st.barColor }}
+                                  />
+                                </div>
+                                <p className="text-[10px] font-bold mt-1" style={{ color: st.barColor }}>
+                                  {row.taxa_acerto !== null ? `${row.taxa_acerto}% de acerto` : "Sem dados ainda"}
+                                  {row.total_exercicios > 0 && ` · ${row.total_exercicios} exercícios`}
+                                </p>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      </ChartCard>
+                    )}
+
+                    {/* ── Full descriptor table ── */}
+                    <ChartCard
+                      title={`Todos os Descritores — ${ano}º Ano`}
+                      subtitle={`${totalDescritores} descritores avaliados pelo SAEB`}
+                      delay={0.2}
+                    >
+                      {saebRows.length === 0 ? (
+                        <div className="text-center py-10">
+                          <ClipboardCheck size={36} className="mx-auto text-muted-foreground mb-3" />
+                          <p className="text-muted-foreground text-sm">
+                            Nenhum descritor encontrado para o {ano}º ano.
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Verifique se a migration do banco foi aplicada.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-[32rem] overflow-y-auto pr-1">
+                          {saebRows.map((row, i) => {
+                            const st = STATUS_MAP[row.nivel] || STATUS_MAP.nao_iniciado;
+                            return (
+                              <motion.div
+                                key={row.codigo}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: i * 0.025 }}
+                                whileHover={{ backgroundColor: "hsl(var(--muted) / 0.4)" }}
+                                className="flex items-center gap-3 p-3 rounded-xl transition-colors"
+                              >
+                                {/* Code badge */}
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xs font-black text-white shrink-0"
+                                  style={{ background: st.barColor }}>
+                                  {row.codigo}
+                                </div>
+                                {/* Description */}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-foreground truncate">{row.descricao}</p>
+                                  <p className="text-[10px] text-muted-foreground">{row.categoria}</p>
+                                </div>
+                                {/* Progress bar */}
+                                <div className="w-24 hidden sm:block">
+                                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                    <motion.div
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${row.taxa_acerto ?? 0}%` }}
+                                      transition={{ duration: 0.7, delay: i * 0.025 + 0.1 }}
+                                      className="h-full rounded-full"
+                                      style={{ background: st.barColor }}
+                                    />
+                                  </div>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5 text-right font-semibold">
+                                    {row.taxa_acerto !== null ? `${row.taxa_acerto}%` : "—"}
+                                  </p>
+                                </div>
+                                {/* Status badge */}
+                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 ${st.classes}`}>
+                                  {st.label}
+                                </span>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </ChartCard>
+                  </>
+                );
+              })()}
             </motion.div>
           )}
 
