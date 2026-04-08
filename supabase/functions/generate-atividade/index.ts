@@ -582,7 +582,7 @@ ${hasStory ? "- TAMANHO DAS CENAS (CRÍTICO): O campo \"texto\" de CADA storyPag
       : `Crie uma atividade de ${genero} para o ${ano}º ano com tema de ${temaDescricao}. O texto DEVE ser do gênero ${genero} com elementos típicos. Gere 5 exercícios (2 do gênero, 2 de interpretação BNCC, 1 de senso crítico). Seja criativo e original.`;
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
