@@ -19,6 +19,7 @@ export type Database = {
           acertos: number | null
           ano: string
           created_at: string | null
+          descritor_saeb: string | null
           exercicio_results: Json | null
           genero: string
           habilidade_bncc: string | null
@@ -35,6 +36,7 @@ export type Database = {
           acertos?: number | null
           ano: string
           created_at?: string | null
+          descritor_saeb?: string | null
           exercicio_results?: Json | null
           genero: string
           habilidade_bncc?: string | null
@@ -51,6 +53,7 @@ export type Database = {
           acertos?: number | null
           ano?: string
           created_at?: string | null
+          descritor_saeb?: string | null
           exercicio_results?: Json | null
           genero?: string
           habilidade_bncc?: string | null
@@ -62,6 +65,42 @@ export type Database = {
           titulo?: string | null
           total_exercicios?: number | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      daily_missions: {
+        Row: {
+          ano_escolar: string
+          ativo: boolean
+          created_at: string
+          created_by: string | null
+          genero_textual: string
+          habilidade_bncc: string | null
+          id: string
+          tema: string
+          updated_at: string
+        }
+        Insert: {
+          ano_escolar: string
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          genero_textual: string
+          habilidade_bncc?: string | null
+          id?: string
+          tema: string
+          updated_at?: string
+        }
+        Update: {
+          ano_escolar?: string
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          genero_textual?: string
+          habilidade_bncc?: string | null
+          id?: string
+          tema?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -98,6 +137,30 @@ export type Database = {
           total_xp?: number | null
           updated_at?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      saeb_descritores: {
+        Row: {
+          ano_escolar: string
+          bncc_codes: string[]
+          codigo: string
+          descricao: string
+          id: number
+        }
+        Insert: {
+          ano_escolar: string
+          bncc_codes?: string[]
+          codigo: string
+          descricao: string
+          id?: number
+        }
+        Update: {
+          ano_escolar?: string
+          bncc_codes?: string[]
+          codigo?: string
+          descricao?: string
+          id?: number
         }
         Relationships: []
       }
@@ -140,6 +203,39 @@ export type Database = {
           recipient_id?: string | null
           share_code?: string
           status?: string
+        }
+        Relationships: []
+      }
+      story_video_cache: {
+        Row: {
+          audio_base64: string | null
+          created_at: string | null
+          id: string
+          image_index: number
+          story_id: string
+          subtitle_en: string | null
+          subtitle_pt: string | null
+          video_url: string
+        }
+        Insert: {
+          audio_base64?: string | null
+          created_at?: string | null
+          id?: string
+          image_index: number
+          story_id: string
+          subtitle_en?: string | null
+          subtitle_pt?: string | null
+          video_url: string
+        }
+        Update: {
+          audio_base64?: string | null
+          created_at?: string | null
+          id?: string
+          image_index?: number
+          story_id?: string
+          subtitle_en?: string | null
+          subtitle_pt?: string | null
+          video_url?: string
         }
         Relationships: []
       }
@@ -271,6 +367,39 @@ export type Database = {
           id?: string
           titulo?: string
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      student_saeb_performance: {
+        Row: {
+          acertos: number
+          ano_escolar: string
+          descritor_codigo: string
+          id: string
+          percentual: number | null
+          total: number
+          ultima_vez: string
+          user_id: string
+        }
+        Insert: {
+          acertos?: number
+          ano_escolar: string
+          descritor_codigo: string
+          id?: string
+          percentual?: number | null
+          total?: number
+          ultima_vez?: string
+          user_id: string
+        }
+        Update: {
+          acertos?: number
+          ano_escolar?: string
+          descritor_codigo?: string
+          id?: string
+          percentual?: number | null
+          total?: number
+          ultima_vez?: string
           user_id?: string
         }
         Relationships: []

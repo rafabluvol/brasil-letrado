@@ -14,7 +14,7 @@ export default function TutorArmario({ currentXp, equippedLevel, onEquip, onBack
 
   const groups: AnimalGroup[] = ["sabia", "tucano", "capivara", "mico", "arara"];
 
-  const isUnlocked = (l: LevelInfo) => currentXp >= l.brazukasNeeded;
+  const isUnlocked = (l: LevelInfo) => currentXp >= l.guarasNeeded;
 
   const renderItem = (l: LevelInfo) => {
     const unlocked = isUnlocked(l);
@@ -58,7 +58,7 @@ export default function TutorArmario({ currentXp, equippedLevel, onEquip, onBack
 
         {!unlocked && (
           <span className="text-[9px] font-semibold text-muted-foreground">
-            🔒 {l.brazukasNeeded} Brazukas
+            🔒 {l.guarasNeeded} Guarás
           </span>
         )}
       </motion.button>

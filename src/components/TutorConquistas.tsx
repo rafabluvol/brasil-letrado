@@ -53,7 +53,7 @@ export default function TutorConquistas({ currentXp, onBack }: Props) {
                     </span>
                     {!isUnlocked && (
                       <span className="text-[8px] text-muted-foreground font-semibold">
-                        {trophy.brazukasRequired} ✨
+                        {trophy.guarasRequired} ✨
                       </span>
                     )}
                     {isUnlocked && (
@@ -69,7 +69,7 @@ export default function TutorConquistas({ currentXp, onBack }: Props) {
                     <p className="text-muted-foreground leading-relaxed">{trophy.inventorInfo}</p>
                   ) : (
                     <p className="text-muted-foreground">
-                      Conquiste {trophy.brazukasRequired} Brazukas para desbloquear! ✨
+                      Conquiste {trophy.guarasRequired} Guarás para desbloquear! ✨
                     </p>
                   )}
                 </TooltipContent>

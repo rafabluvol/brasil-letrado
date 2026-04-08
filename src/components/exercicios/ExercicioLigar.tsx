@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 
 interface Par {
   esquerda: string;
@@ -17,6 +17,7 @@ interface Props {
 export default function ExercicioLigar({ textoContexto, pares, onComplete, showResult }: Props) {
   const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
   const [connections, setConnections] = useState<Map<number, number>>(new Map());
+  const [verified, setVerified] = useState(false);
   const [shuffledRight] = useState(() => {
     const indices = pares.map((_, i) => i);
     for (let i = indices.length - 1; i > 0; i--) {
@@ -26,7 +27,6 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
     return indices;
   });
 
-  // SVG line drawing
   const containerRef = useRef<HTMLDivElement>(null);
   const leftRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const rightRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -60,9 +60,10 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
     return () => window.removeEventListener('resize', updateLines);
   }, [updateLines]);
 
+  const isLocked = showResult || verified;
+
   const handleLeftClick = (idx: number) => {
-    if (showResult) return;
-    // If already connected, disconnect first
+    if (isLocked) return;
     if (connections.has(idx)) {
       const newConnections = new Map(connections);
       newConnections.delete(idx);
@@ -72,9 +73,7 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
   };
 
   const handleRightClick = (shuffledIdx: number) => {
-    if (showResult || selectedLeft === null) return;
-    
-    // Remove any existing connection to this right item
+    if (isLocked || selectedLeft === null) return;
     const newConnections = new Map(connections);
     for (const [k, v] of newConnections) {
       if (v === shuffledIdx) newConnections.delete(k);
@@ -87,16 +86,27 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
       const allCorrect = Array.from(newConnections.entries()).every(
         ([leftIdx, rightShuffledIdx]) => shuffledRight[rightShuffledIdx] === leftIdx
       );
+      setVerified(true);
       onComplete(allCorrect);
     }
   };
 
+  const handleRetry = () => {
+    setConnections(new Map());
+    setSelectedLeft(null);
+    setVerified(false);
+  };
+
   const getLineColor = (leftIdx: number) => {
-    if (!showResult) return "#6366f1";
+    if (!isLocked) return "#6366f1";
     const rightIdx = connections.get(leftIdx);
     if (rightIdx === undefined) return "#6366f1";
     return shuffledRight[rightIdx] === leftIdx ? "#22c55e" : "#ef4444";
   };
+
+  const allCorrect = verified && Array.from(connections.entries()).every(
+    ([leftIdx, rightShuffledIdx]) => shuffledRight[rightShuffledIdx] === leftIdx
+  );
 
   return (
     <div className="flex flex-col gap-3 w-full">
@@ -112,7 +122,6 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
       </p>
 
       <div ref={containerRef} className="relative">
-        {/* SVG overlay for lines */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
           {lines.map((line, i) => (
             <line
@@ -128,19 +137,18 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
         </svg>
 
         <div className="grid grid-cols-2 gap-6">
-          {/* Left column */}
           <div className="space-y-2">
             {pares.map((par, idx) => {
               const isSelected = selectedLeft === idx;
               const isConnected = connections.has(idx);
-              const isCorrect = showResult && isConnected && shuffledRight[connections.get(idx)!] === idx;
-              const isWrong = showResult && isConnected && shuffledRight[connections.get(idx)!] !== idx;
+              const isCorrect = isLocked && isConnected && shuffledRight[connections.get(idx)!] === idx;
+              const isWrong = isLocked && isConnected && shuffledRight[connections.get(idx)!] !== idx;
 
               return (
                 <motion.button
                   key={`l-${idx}`}
                   ref={el => { leftRefs.current[idx] = el; }}
-                  whileHover={!showResult ? { scale: 1.02 } : {}}
+                  whileHover={!isLocked ? { scale: 1.02 } : {}}
                   onClick={() => handleLeftClick(idx)}
                   className={`w-full text-left p-3 rounded-xl border-2 font-semibold text-sm transition-all ${
                     isCorrect ? "border-green-500 bg-green-50 text-green-700" :
@@ -159,7 +167,6 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
             })}
           </div>
 
-          {/* Right column */}
           <div className="space-y-2">
             {shuffledRight.map((originalIdx, shuffledIdx) => {
               const isConnected = Array.from(connections.values()).includes(shuffledIdx);
@@ -169,7 +176,7 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
                 <motion.button
                   key={`r-${shuffledIdx}`}
                   ref={el => { rightRefs.current[shuffledIdx] = el; }}
-                  whileHover={!showResult ? { scale: 1.02 } : {}}
+                  whileHover={!isLocked ? { scale: 1.02 } : {}}
                   onClick={() => handleRightClick(shuffledIdx)}
                   className={`w-full text-left p-3 rounded-xl border-2 font-semibold text-sm transition-all ${
                     isConnected
@@ -186,6 +193,15 @@ export default function ExercicioLigar({ textoContexto, pares, onComplete, showR
           </div>
         </div>
       </div>
+
+      {verified && !allCorrect && (
+        <div className="mt-3 space-y-2">
+          <p className="text-sm font-bold text-destructive text-center">😊 Quase lá! Tente reorganizar.</p>
+          <button onClick={handleRetry} className="btn-hero w-full flex items-center justify-center gap-2">
+            <RotateCcw size={16} /> Tentar Novamente
+          </button>
+        </div>
+      )}
     </div>
   );
 }

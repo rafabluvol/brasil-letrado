@@ -1,62 +1,107 @@
-import { useState, useCallback, useImperativeHandle, forwardRef } from "react";
-import { motion } from "framer-motion";
+import { useImperativeHandle, forwardRef, useCallback, useState, useRef, useEffect } from "react";
 
-import araraHanging from "@/assets/arara-hanging.png";
+const ONCA_VIDEO_URL = "/onca-walk-loop.mp4";
 
 export interface MicoAnimadoHandle {
   jumpTo: (targetRef: React.RefObject<HTMLElement | null>) => Promise<void>;
 }
 
-const MicoAnimado = forwardRef<MicoAnimadoHandle, { size?: number }>(({ size = 34 }, ref) => {
-  const [swinging, setSwinging] = useState(false);
+interface Props {
+  size?: number;
+  walkWidth?: number;
+  walkDuration?: number;
+}
 
-  const triggerSwing = useCallback(() => {
-    if (swinging) return;
-    setSwinging(true);
-    setTimeout(() => setSwinging(false), 2000);
-  }, [swinging]);
+const MicoAnimado = forwardRef<MicoAnimadoHandle, Props>(
+  ({ size = 60, walkWidth, walkDuration = 45 }, ref) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [facingRight, setFacingRight] = useState(true);
 
-  const jumpTo = useCallback(async () => {
-    triggerSwing();
-  }, [triggerSwing]);
+    const jumpTo = useCallback(async () => {}, []);
+    useImperativeHandle(ref, () => ({ jumpTo }), [jumpTo]);
 
-  useImperativeHandle(ref, () => ({ jumpTo }), [jumpTo]);
+    const height = size;
+    const width = size * 1.78;
 
-  return (
-    <motion.div
-      onMouseEnter={triggerSwing}
-      className="relative z-20 cursor-pointer"
-      style={{
-        width: size,
-        height: size * 1.4,
-        transformOrigin: "50% 2%", // pivot exactly at beak tip
-      }}
-      animate={
-        swinging
-          ? { rotate: [0, -25, 22, -15, 12, -6, 3, 0] }
-          : { rotate: 0 }
-      }
-      transition={
-        swinging
-          ? { duration: 1.8, ease: [0.35, 0, 0.25, 1] }
-          : { duration: 0.3 }
-      }
-    >
-      <img
-        src={araraHanging}
-        alt="Arara pendurada"
-        className="block"
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el || !walkWidth) return;
+
+      const margin = 10;
+      const maxX = walkWidth - width - margin * 2;
+
+      // Simple linear back and forth - video is pure walking so no sync issues
+      const anim = el.animate(
+        [
+          { transform: `translateX(${margin}px)` },
+          { transform: `translateX(${maxX + margin}px)` },
+          { transform: `translateX(${margin}px)` },
+        ],
+        {
+          duration: walkDuration * 1000,
+          iterations: Infinity,
+          easing: "linear",
+        }
+      );
+
+      let lastX = margin;
+      let rafId: number;
+      const checkDirection = () => {
+        const rect = el.getBoundingClientRect();
+        const parentRect = el.parentElement?.getBoundingClientRect();
+        if (parentRect) {
+          const currentX = rect.left - parentRect.left;
+          if (currentX > lastX + 0.5) setFacingRight(true);
+          else if (currentX < lastX - 0.5) setFacingRight(false);
+          lastX = currentX;
+        }
+        rafId = requestAnimationFrame(checkDirection);
+      };
+      rafId = requestAnimationFrame(checkDirection);
+
+      return () => {
+        anim.cancel();
+        cancelAnimationFrame(rafId);
+      };
+    }, [walkWidth, walkDuration, width]);
+
+    return (
+      <div
+        ref={containerRef}
         style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.2))",
-          transform: "perspective(300px) rotateY(50deg)",
+          position: "absolute",
+          bottom: -14,
+          left: 0,
+          width,
+          height,
+          willChange: "transform",
+          isolation: "isolate",
         }}
-      />
-    </motion.div>
-  );
-});
+      >
+        <video
+          src={ONCA_VIDEO_URL}
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            mixBlendMode: "multiply",
+            background: "transparent",
+            boxShadow: "none",
+            border: "none",
+            outline: "none",
+            filter: "contrast(1.2) brightness(1.15)",
+            transform: facingRight ? "scaleX(1)" : "scaleX(-1)",
+            transition: "transform 0.15s ease",
+          }}
+        />
+      </div>
+    );
+  }
+);
 
 MicoAnimado.displayName = "MicoAnimado";
 export default MicoAnimado;

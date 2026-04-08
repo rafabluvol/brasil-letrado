@@ -30,12 +30,12 @@ export default function ExerciseProgressWrapper({
     <div className="flex flex-col items-center justify-center w-full max-w-2xl mx-auto gap-4">
       {/* Header with context phrase from the story */}
       {textoContexto && (
-        <div className="w-full bg-gradient-to-r from-primary/5 via-secondary/5 to-accent/5 rounded-2xl p-4 border border-border/50">
-          <div className="flex items-center gap-2 mb-2">
-            <BookOpen size={16} className="text-primary" />
-            <p className="text-xs font-bold text-primary uppercase tracking-wide">{emoji} {label}</p>
+        <div className="w-full bg-gradient-to-r from-primary/5 via-secondary/5 to-accent/5 rounded-xl px-4 py-3 border-2 border-primary/20 shadow-sm">
+          <div className="flex items-center gap-2 mb-1">
+            <BookOpen size={14} className="text-primary" />
+            <p className="text-[10px] font-bold text-primary uppercase tracking-widest">{emoji} {label}</p>
           </div>
-          <p className="text-sm text-foreground/80 leading-relaxed">{textoContexto}</p>
+          <p className="text-base md:text-lg text-foreground font-normal leading-none" style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%' }}>{textoContexto}</p>
         </div>
       )}
 

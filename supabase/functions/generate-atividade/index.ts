@@ -261,12 +261,26 @@ IMPORTANTE: O texto DEVE ser do gênero "${genero}" e conter elementos típicos 
   ],
   "minijogos_aquecimento": {
     "lacunas": {
-      "textoContexto": "Um parágrafo curto (2-3 linhas) extraído ou parafraseado da história, contendo as palavras que serão lacunas",
-      "frases": [
-        {"frase": "Frase curta com _____ no lugar de uma palavra-chave", "opcoes": ["correta", "errada1", "errada2"], "respostaCorreta": 0},
-        {"frase": "Outra frase curta com _____ no lugar", "opcoes": ["correta", "errada1", "errada2"], "respostaCorreta": 0},
-        {"frase": "Terceira frase curta com _____", "opcoes": ["correta", "errada1", "errada2"], "respostaCorreta": 0},
-        {"frase": "Quarta frase curta com _____", "opcoes": ["correta", "errada1", "errada2"], "respostaCorreta": 0}
+      "REGRA_CRITICA": "Cada frase DEVE ter EXATAMENTE 4 opções. A resposta correta NUNCA deve estar sempre na mesma posição - VARIE o respostaCorreta entre 0, 1, 2 e 3 de forma ALEATÓRIA em cada frase.",
+      "paragrafos": [
+        {
+          "textoContexto": "Primeiro parágrafo extraído/parafraseado da história. Coeso e fluido.",
+          "frases": [
+            {"frase": "Primeira frase do parágrafo 1 com _____ no lugar de uma palavra-chave", "opcoes": ["errada1", "correta", "errada2", "errada3"], "respostaCorreta": 1},
+            {"frase": "Segunda frase continua a narrativa com _____ no lugar", "opcoes": ["errada1", "errada2", "correta", "errada3"], "respostaCorreta": 2},
+            {"frase": "Terceira frase avança a trama com _____", "opcoes": ["correta", "errada1", "errada2", "errada3"], "respostaCorreta": 0}
+          ],
+          "emocao": {"pergunta": "Como o personagem se sentiu nesse momento?", "opcoes": ["😊", "😨", "😢", "😡"], "respostaCorreta": 1}
+        },
+        {
+          "textoContexto": "Segundo parágrafo, CONTINUAÇÃO do primeiro, avançando a trama.",
+          "frases": [
+            {"frase": "Primeira frase do parágrafo 2 com _____", "opcoes": ["errada1", "errada2", "correta", "errada3"], "respostaCorreta": 2},
+            {"frase": "Segunda frase avança a narrativa com _____", "opcoes": ["correta", "errada1", "errada2", "errada3"], "respostaCorreta": 0},
+            {"frase": "Terceira frase conclui o parágrafo 2 com _____", "opcoes": ["errada1", "correta", "errada2", "errada3"], "respostaCorreta": 1}
+          ],
+          "emocao": {"pergunta": "Como o personagem se sentiu no final?", "opcoes": ["😊", "😨", "😢", "😡"], "respostaCorreta": 0}
+        }
       ]
     },
     "forca": {
@@ -275,33 +289,24 @@ IMPORTANTE: O texto DEVE ser do gênero "${genero}" e conter elementos típicos 
       "dica": "Dica sobre a palavra relacionada à história"
     },
     "cruzadinha": {
-      "textoContexto": "Uma frase curta (1 linha) da história relacionada às palavras da cruzadinha",
+      "textoContexto": "REGRA OBRIGATÓRIA: 2-3 frases curtas (máx 120 chars total) da história contendo EXATAMENTE 6 palavras entre **asteriscos**. Essas 6 palavras destacadas são as que o aluno verá em VERDE e precisará encontrar os antônimos na cruzadinha. NUNCA coloque menos de 6 palavras entre asteriscos. Exemplo CORRETO: 'O dia estava **claro** e a menina ficou **feliz** com o passeio **longo**. O caminho era **largo** e o rio **raso** na parte **bonita**.'",
       "palavras": [
-        {"palavra": "PALAVRA1", "dica": "Dica 1", "direcao": "horizontal", "linha": 1, "coluna": 1},
-        {"palavra": "PALAVRA2", "dica": "Dica 2", "direcao": "vertical", "linha": 1, "coluna": 4},
-        {"palavra": "PALAVRA3", "dica": "Dica 3", "direcao": "horizontal", "linha": 4, "coluna": 1},
-        {"palavra": "PALAVRA4", "dica": "Dica 4", "direcao": "vertical", "linha": 4, "coluna": 6}
+        {"palavra": "ESCURO", "dica": "CLARO"},
+        {"palavra": "TRISTE", "dica": "FELIZ"},
+        {"palavra": "CURTO", "dica": "LONGO"},
+        {"palavra": "ESTREITO", "dica": "LARGO"},
+        {"palavra": "FUNDO", "dica": "RASO"},
+        {"palavra": "FEIO", "dica": "BONITO"}
       ]
     },
     "cacapalavras": {
-      "textoContexto": "Duas linhas da história contendo as palavras a serem encontradas, com as palavras-chave em destaque",
-      "grade": [
-        ["A","B","C","D","E","F","G","H","I","J"],
-        ["K","L","M","N","O","P","Q","R","S","T"],
-        ["U","V","W","X","Y","Z","A","B","C","D"],
-        ["E","F","G","H","I","J","K","L","M","N"],
-        ["O","P","Q","R","S","T","U","V","W","X"],
-        ["Y","Z","A","B","C","D","E","F","G","H"],
-        ["I","J","K","L","M","N","O","P","Q","R"],
-        ["S","T","U","V","W","X","Y","Z","A","B"],
-        ["C","D","E","F","G","H","I","J","K","L"],
-        ["M","N","O","P","Q","R","S","T","U","V"]
-      ],
-      "palavras": ["PALAVRA1", "PALAVRA2", "PALAVRA3", "PALAVRA4", "PALAVRA5"]
+      "textoContexto": "Um trecho curto (2-3 linhas) da história. As 3 palavras-alvo DEVEM estar presentes neste texto.",
+      "grade": "GERE UMA GRADE 10x10. REGRAS CRÍTICAS: coloque EXATAMENTE 3 palavras na grade - uma na HORIZONTAL, uma na VERTICAL e uma na DIAGONAL. Preencha o restante com letras aleatórias. As palavras devem ter entre 4-7 letras. VERIFIQUE que cada palavra está realmente presente na grade antes de retornar.",
+      "palavras": ["PALAVRA_HORIZONTAL", "PALAVRA_VERTICAL", "PALAVRA_DIAGONAL"]
     },
     "ordenar": {
       "textoContexto": "Uma frase curta (1 linha) sobre a sequência de eventos da história",
-      "itensOrdenados": ["1º evento da história", "2º evento", "3º evento", "4º evento", "5º evento"]
+      "itensOrdenados": ["1º evento da história", "2º evento", "3º evento", "4º evento"]
     },
     "ligar": {
       "textoContexto": "Uma ou duas frases da história relacionadas aos pares a serem ligados",
@@ -482,17 +487,36 @@ REGRA CRÍTICA — NÃO COPIE O TEXTO LITERALMENTE:
 - Mesmo para 1º e 2º ano, evite que o aluno acerte apenas por reconhecimento visual direto — ele deve ter LIDO e COMPREENDIDO o texto.
 - Use referências como "no texto", "na história", "segundo o trecho" em vez de "na página X"
 
+REGRA CRÍTICA — LACUNAS COM 2 PARÁGRAFOS:
+- O minijogo "lacunas" DEVE ter o campo "paragrafos" com EXATAMENTE 2 parágrafos.
+- Cada parágrafo tem "textoContexto" (breve descrição) e "frases" (EXATAMENTE 3 lacunas — NEM MAIS, NEM MENOS).
+- IMPORTANTE: As frases de cada parágrafo devem formar um TEXTO CONTÍNUO e COESO, como um parágrafo real de uma história. NÃO devem parecer frases soltas/separadas.
+- O segundo parágrafo é CONTINUAÇÃO do primeiro, avançando a trama.
+- O textoContexto deve dar contexto suficiente para o aluno saber o que preencher — NUNCA deve ser adivinhável no chute.
+- NÃO use o formato antigo com "frases" diretamente em "lacunas". Use SEMPRE "paragrafos".
+- REGRA DE DESAMBIGUAÇÃO: Cada lacuna DEVE ter UMA ÚNICA resposta possível. As 4 opções devem ser claramente diferenciáveis pelo contexto da história. Nunca coloque duas palavras que poderiam caber na mesma lacuna. A palavra correta deve ser determinada EXCLUSIVAMENTE pela interpretação e compreensão do texto, não por gramática ou senso comum. Exemplo ruim: lacuna com opções "bonito/lindo" (sinônimos). Exemplo bom: lacuna com opções "rio/montanha/escola/jardim" onde só "rio" faz sentido na história.
+
+REGRA — EMOÇÃO DO PERSONAGEM (EMOJI):
+- Cada parágrafo DEVE ter um campo "emocao" com a seguinte estrutura:
+  { "pergunta": "Como [personagem] se sentiu nesse momento?", "opcoes": ["😊", "😨", "😢", "😡"], "respostaCorreta": 0 }
+- A pergunta deve ser sobre a emoção de um personagem naquele trecho específico.
+- As opções devem ter EXATAMENTE 4 emojis de emoção distintos.
+- respostaCorreta é o índice (0-3) do emoji correto.
+- O emoji correto deve ser claramente determinado pelo contexto do parágrafo.
+
 REGRAS GERAIS:
 - Gere EXATAMENTE 5 exercícios
 - respostaCorreta é o índice (0-3) para múltipla-escolha e completar
 - respostaCorreta é "verdadeiro" ou "falso" para verdadeiro-falso
 - Para ligar: os pares devem ter relação clara com o texto
-- Para ordenar: itensOrdenados deve estar na ORDEM CORRETA (o sistema embaralha)
+- Para ordenar: itensOrdenados deve ter EXATAMENTE 4 itens na ORDEM CORRETA (o sistema embaralha)
 - Para memória: use sinônimos reais de palavras que aparecem no texto
+- Para cruzadinha: use EXATAMENTE 6 pares de antônimos. O campo "dica" é a PALAVRA ORIGINAL do texto (que aparece em verde). O campo "palavra" é o ANTÔNIMO que o aluno deve preencher na cruzadinha. O textoContexto DEVE ter EXATAMENTE 6 palavras entre **asteriscos** — nem mais, nem menos. Varie bastante as palavras de acordo com o ano escolar do aluno e o tema da história. Para anos 1-2 use antônimos simples (grande/pequeno, alto/baixo). Para anos 3-5 use antônimos mais sofisticados (corajoso/covarde, generoso/egoísta).
 - Dificuldade: 1 (fácil), 2 (médio), 3 (difícil)
 - O texto deve ser envolvente, educativo e original
 - Cada exercício DEVE ter uma explicação clara e didática
 - O campo categoria deve ser: "interpretacao", "vocabulario" ou "gramatica"
+- REGRA PARA textoContexto: TODOS os campos textoContexto devem ser frases CURTAS de UMA LINHA APENAS (máximo 80 caracteres). Devem ser extraídas ou inspiradas na história. Objetivo é contextualizar o exercício de forma rápida.
 ${hasStory ? `
 ============================================================
 REGRAS PARA EXERCICIO_CENA (exercícios integrados por cena):
@@ -533,12 +557,12 @@ Os 8 exercícios são apresentados na seguinte ordem:
 
 TODOS devem ter "textoContexto" com 1-2 linhas da história.
 
-CAMPO "lacunas": 4 frases curtas com lacunas. textoContexto 2-3 linhas. Foque em interpretação e habilidade BNCC.
+CAMPO "lacunas": DEVE usar o formato "paragrafos" com EXATAMENTE 2 parágrafos. Cada parágrafo tem "textoContexto", "frases" (EXATAMENTE 3 lacunas) e "emocao" (pergunta sobre emoção do personagem com 4 emojis). Foque em interpretação e habilidade BNCC. NUNCA use "frases" diretamente em "lacunas" — use SEMPRE "paragrafos". Veja o exemplo no JSON de schema acima.
 CAMPO "forca": MAIÚSCULAS sem acentos, dica. textoContexto 1 linha. 4-8 letras anos 1-3, até 10 anos 4-5.
-CAMPO "cruzadinha": 4 palavras grade 8x8 (1-indexed). textoContexto 1 linha. MAIÚSCULAS sem acentos.
+CAMPO "cruzadinha": 6 palavras (antônimos). textoContexto 2-3 frases com 6 palavras em **asteriscos**. MAIÚSCULAS sem acentos. Varie as palavras conforme ano escolar.
 CAMPO "cacapalavras": grade 10x10, 5-6 palavras colocadas na HORIZONTAL, VERTICAL e DIAGONAL. textoContexto 2 linhas com palavras-alvo. MAIÚSCULAS sem acentos. As palavras devem estar REALMENTE inseridas na grade nas direções horizontal, vertical ou diagonal. Preencha o resto com letras aleatórias.
 CAMPO "ordenar": 5 eventos ordem correta. textoContexto 1 linha.
-CAMPO "ligar": 4 pares. textoContexto 1-2 linhas.
+CAMPO "ligar": 4 pares com "esquerda" e "direita" OBRIGATÓRIOS e preenchidos com texto real (NUNCA "Opção 1", "Opção 2"). textoContexto 1-2 linhas.
 CAMPO "verdadeiroFalso": 4 afirmações com "correta" (boolean). textoContexto 2-3 linhas.
 CAMPO "gramatica": "classeAlvo" + 8 palavras com "classe". textoContexto 1 linha. 1-2º=substantivo, 3-4º=adjetivo, 5º=verbo.
 CAMPO "memoria": 4 pares sinônimos com "pares". textoContexto 1 linha.

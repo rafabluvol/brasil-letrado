@@ -1,17 +1,18 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, TrendingUp, User, GraduationCap, LogOut, Library, Clapperboard, Lightbulb, Trophy } from "lucide-react";
+import { Home, TrendingUp, User, GraduationCap, LogOut, Library, Clapperboard, Trophy, ClipboardList } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { getLevelInfo } from "@/lib/level-system";
 import MicoAnimado, { type MicoAnimadoHandle } from "@/components/MicoAnimado";
+import guaraCoin from "@/assets/guara-coin.png";
 
 const NAV_ITEMS = [
   { to: "/", icon: Home, label: "Início", desc: "Página inicial com atividades", color: "from-[#22c55e] to-[#4ade80]", activeColor: "#22c55e", gradientEnd: "#4ade80" },
+  { to: "/professor", icon: ClipboardList, label: "Professora", desc: "Painel da professora", color: "from-[#8b5cf6] to-[#a78bfa]", activeColor: "#8b5cf6", gradientEnd: "#a78bfa" },
   { to: "/estante", icon: Library, label: "Estante", desc: "Seus livrinhos mágicos", color: "from-[#eab308] to-[#facc15]", activeColor: "#eab308", gradientEnd: "#facc15" },
   { to: "/producoes", icon: Clapperboard, label: "Produções", desc: "Vídeos e animações", color: "from-[#0ea5e9] to-[#38bdf8]", activeColor: "#0ea5e9", gradientEnd: "#38bdf8" },
-  { to: "/vivenciando", icon: Lightbulb, label: "VivencIAndo", desc: "Ideias para vivenciar fora das telas", color: "from-[#f97316] to-[#fb923c]", activeColor: "#f97316", gradientEnd: "#fb923c" },
-  { to: "/conquistas", icon: Trophy, label: "Conquistas", desc: "Níveis, Brazukas e troféus", color: "from-[#eab308] to-[#f59e0b]", activeColor: "#eab308", gradientEnd: "#f59e0b" },
+  { to: "/conquistas", icon: Trophy, label: "Conquistas", desc: "Níveis, Guarás e troféus", color: "from-[#eab308] to-[#f59e0b]", activeColor: "#eab308", gradientEnd: "#f59e0b" },
   { to: "/dashboard", icon: TrendingUp, label: "Progresso", desc: "Seu desempenho e evolução", color: "from-[#a855f7] to-[#c084fc]", activeColor: "#a855f7", gradientEnd: "#c084fc" },
   { to: "/bncc", icon: GraduationCap, label: "BNCC", desc: "Currículo e habilidades", color: "from-[#d946ef] to-[#e879f9]", activeColor: "#d946ef", gradientEnd: "#e879f9" },
 ];
@@ -21,6 +22,8 @@ export default function Header() {
   const { user, profile, signOut } = useAuth();
   const micoRef = useRef<MicoAnimadoHandle>(null);
   const brRef = useRef<HTMLSpanElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerWidth, setHeaderWidth] = useState(0);
 
   // Auto-trigger pendulum swing after 8s
   const swingOnce = useRef(false);
@@ -33,9 +36,28 @@ export default function Header() {
   const levelInfo = getLevelInfo(nivel);
   const progresso = Math.min(((xp % 300) / 300) * 100, 100);
 
+  const oncaDuration = 45;
+  const oncaSize = 85;
+
+  useEffect(() => {
+    const measure = () => {
+      if (headerRef.current) setHeaderWidth(headerRef.current.offsetWidth);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
   return (
-    <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-lg border-b border-border" style={{ minHeight: 72 }}>
-      <div className="container flex items-center justify-between h-[72px]">
+    <header ref={headerRef} className="sticky top-0 z-40 bg-white border-b border-border" style={{ minHeight: 72 }}>
+      {/* Onça walking along the bottom border of the header, behind everything */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 2 }}>
+        {headerWidth > 0 && (
+          <MicoAnimado ref={micoRef} size={oncaSize} walkWidth={headerWidth} walkDuration={oncaDuration} />
+        )}
+      </div>
+
+      <div className="container flex items-center justify-between h-[72px] relative" style={{ zIndex: 5 }}>
          <Link to="/" className="flex items-center gap-1.5 relative" onClick={(e) => { if (location.pathname === "/") e.preventDefault(); }}>
           <div className="relative flex items-center overflow-visible">
             <div className="flex flex-col leading-none relative z-10 overflow-visible pl-6">
@@ -49,22 +71,12 @@ export default function Header() {
                       WebkitBackgroundClip: 'text',
                       WebkitTextFillColor: 'transparent',
                       backgroundClip: 'text',
+                      zIndex: 10,
                     }}
                   >
                     Brasil
-                    <span
-                      className="absolute pointer-events-auto"
-                      style={{
-                        left: '0.34em',
-                        top: '6%',
-                        transform: 'translate(-50%, 0)',
-                        zIndex: 5,
-                      }}
-                    >
-                      <MicoAnimado ref={micoRef} size={70} />
-                    </span>
                   </span>
-                  <span className="relative inline-flex flex-col items-center">
+                  <span className="relative inline-flex flex-col items-center" style={{ zIndex: 10 }}>
                     <span
                       style={{
                         background: 'linear-gradient(135deg, #2ecc40, #a8e63d, #f9e230, #f4a400, #1ab0c8)',
@@ -97,8 +109,19 @@ export default function Header() {
         {/* XP Bar - only when logged in */}
         {user && (
           <div className="hidden sm:flex items-center gap-3">
-            <span className="badge-xp">⭐ {xp} Brazukas</span>
-            <div className="w-32 progress-bar">
+            <div className="relative group/coin flex items-center gap-2.5 bg-card/80 border border-border/60 rounded-full pl-0.5 pr-4 py-0.5 shadow-sm cursor-default">
+              <img
+                src={guaraCoin}
+                alt="Guará"
+                className="w-9 h-9 drop-shadow-[0_2px_6px_rgba(234,179,8,0.35)] transition-transform duration-700 group-hover/coin:[transform:rotateY(360deg)]"
+                loading="lazy"
+              />
+              <div className="flex flex-col leading-none">
+                <span className="text-sm font-normal text-muted-foreground">{xp}</span>
+                <span className="text-[8px] font-medium text-muted-foreground uppercase tracking-widest">Guarás</span>
+              </div>
+            </div>
+            <div className="w-24 progress-bar">
               <div className="progress-bar-fill" style={{ width: `${progresso}%` }} />
             </div>
             <span className="text-xs text-muted-foreground font-semibold">Nível {nivel}</span>
