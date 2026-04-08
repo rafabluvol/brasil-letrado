@@ -589,6 +589,10 @@ ${hasStory ? "- TAMANHO DAS CENAS (CRÍTICO): O campo \"texto\" de CADA storyPag
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: "user", parts: [{ text: userMessage }] }],
+          generationConfig: {
+            maxOutputTokens: 8192,
+            responseMimeType: "application/json",
+          },
         }),
       }
     );
@@ -607,10 +611,13 @@ ${hasStory ? "- TAMANHO DAS CENAS (CRÍTICO): O campo \"texto\" de CADA storyPag
     }
 
     const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidate = data.candidates?.[0];
+    const content = candidate?.content?.parts?.[0]?.text;
 
     if (!content) {
-      return new Response(JSON.stringify({ error: "Resposta vazia da IA" }), {
+      const finishReason = candidate?.finishReason ?? "UNKNOWN";
+      console.error("Empty content from Gemini. finishReason:", finishReason, JSON.stringify(data).slice(0, 300));
+      return new Response(JSON.stringify({ error: `Resposta vazia da IA (finishReason: ${finishReason})` }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
