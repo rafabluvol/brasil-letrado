@@ -216,6 +216,28 @@ Banco já foi migrado. Falta:
 
 ---
 
+## PENDENTE — INVESTIGAR
+
+**Sintoma:** geração de histórias falha no browser (Vercel e localhost) mas funciona via `curl` direto na edge function.
+
+Pontos a investigar em ordem:
+
+1. **Parâmetros do frontend** — O componente que chama `generate-atividade` está enviando `ano`, `genero` e `tema` corretamente? Inspecionar no DevTools → Network a requisição real que sai do browser.
+
+2. **VITE_SUPABASE_URL no `.env` local** — Confirmar que aponta para o projeto correto (`ekoxgrexrkyftghwpjap`):
+   ```
+   VITE_SUPABASE_URL=https://ekoxgrexrkyftghwpjap.supabase.co
+   VITE_SUPABASE_ANON_KEY=eyJhbGci...u_bFCnXp4RlfZ1ZlWAMYpUf7feH4sGjivk1wXYu0qFw
+   ```
+
+3. **Variáveis de ambiente no Vercel** — Verificar em Project Settings → Environment Variables se `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` estão definidas e apontam para `ekoxgrexrkyftghwpjap`. Se estiverem apontando para um projeto antigo (Lovable), a chamada vai para o Supabase errado.
+
+4. **CORS ou JWT inválido** — A edge function tem `verify_jwt: true` (padrão). Se o frontend estiver usando uma `anon key` de outro projeto, o Supabase retorna 401. Verificar no DevTools o status code da resposta.
+
+**Como debugar rapidamente:** Abrir DevTools → Network → filtrar por `generate-atividade` → ver a URL completa, o status HTTP e o corpo da resposta.
+
+---
+
 ## Avisos Importantes
 
 - **Não alterar** `elevenlabs-tts` nem `generate-scene-video` — usam APIs próprias (ElevenLabs e Replicate) e funcionam
