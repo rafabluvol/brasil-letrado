@@ -1,51 +1,113 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, Search } from "lucide-react";
+import { playCorrectSound } from "@/lib/sounds";
 
 interface Props {
   textoContexto?: string;
-  grade: string[][];
   palavras: string[];
+  grade?: string[][];
   onComplete: () => void;
-  /** Called with (found, total) whenever a word is found */
   onProgress?: (found: number, total: number) => void;
 }
 
 function cellKey(r: number, c: number) { return `${r},${c}`; }
 
-/* Check if a word exists in the grid in any direction */
-function wordExistsInGrid(grid: string[][], word: string): boolean {
-  const rows = grid.length;
-  const cols = grid[0]?.length || 0;
-  const dirs = [[0,1],[1,0],[0,-1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      for (const [dr, dc] of dirs) {
-        let found = true;
-        for (let k = 0; k < word.length; k++) {
-          const nr = r + dr * k, nc = c + dc * k;
-          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) { found = false; break; }
-          if ((grid[nr][nc] || "").toUpperCase() !== word[k]) { found = false; break; }
+const GRID_SIZE = 10;
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+type Direction = [number, number];
+const DIRS: { h: Direction; v: Direction; d: Direction } = {
+  h: [0, 1],  // horizontal
+  v: [1, 0],  // vertical
+  d: [1, 1],  // diagonal
+};
+
+function normalize(s: string) {
+  return s.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function buildGrid(words: string[]): { grid: string[][]; placed: string[] } {
+  const size = GRID_SIZE;
+  const grid: (string | null)[][] = Array.from({ length: size }, () => Array(size).fill(null));
+  const placed: string[] = [];
+
+  // Assign directions: first=horizontal, second=vertical, third=diagonal
+  const dirKeys: (keyof typeof DIRS)[] = ["h", "v", "d"];
+
+  for (let wi = 0; wi < words.length && wi < 3; wi++) {
+    const word = normalize(words[wi]);
+    if (word.length > size) continue;
+    const [dr, dc] = DIRS[dirKeys[wi % 3]];
+
+    let didPlace = false;
+    // Try random positions up to 200 times
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const maxR = size - (dr === 0 ? 1 : word.length);
+      const maxC = size - (dc === 0 ? 1 : word.length);
+      const startR = Math.floor(Math.random() * (maxR + 1));
+      const startC = Math.floor(Math.random() * (maxC + 1));
+
+      let canPlace = true;
+      for (let k = 0; k < word.length; k++) {
+        const r = startR + dr * k;
+        const c = startC + dc * k;
+        const existing = grid[r][c];
+        if (existing !== null && existing !== word[k]) { canPlace = false; break; }
+      }
+      if (!canPlace) continue;
+
+      for (let k = 0; k < word.length; k++) {
+        grid[startR + dr * k][startC + dc * k] = word[k];
+      }
+      placed.push(word);
+      didPlace = true;
+      break;
+    }
+
+    // Fallback: try all positions
+    if (!didPlace) {
+      outer: for (let r = 0; r <= size - (dr === 0 ? 1 : word.length); r++) {
+        for (let c = 0; c <= size - (dc === 0 ? 1 : word.length); c++) {
+          let canPlace = true;
+          for (let k = 0; k < word.length; k++) {
+            const existing = grid[r + dr * k][c + dc * k];
+            if (existing !== null && existing !== word[k]) { canPlace = false; break; }
+          }
+          if (!canPlace) continue;
+          for (let k = 0; k < word.length; k++) {
+            grid[r + dr * k][c + dc * k] = word[k];
+          }
+          placed.push(word);
+          didPlace = true;
+          break outer;
         }
-        if (found) return true;
       }
     }
   }
-  return false;
+
+  // Fill empty cells with random letters
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (grid[r][c] === null) {
+        grid[r][c] = ALPHABET[Math.floor(Math.random() * 26)];
+      }
+    }
+  }
+
+  return { grid: grid as string[][], placed };
 }
 
-export default function ExercicioCacaPalavras({ textoContexto, grade, palavras, onComplete, onProgress }: Props) {
+export default function ExercicioCacaPalavras({ textoContexto, palavras, onComplete, onProgress }: Props) {
+  const { grid: grade, placed: validWords } = useMemo(() => {
+    const clean = (palavras || []).map(p => normalize(p)).filter(w => w.length >= 2 && w.length <= GRID_SIZE);
+    const words = clean.length > 0 ? clean.slice(0, 3) : ["PALAVRA"];
+    return buildGrid(words);
+  }, [palavras]);
+
   const rows = grade.length;
   const cols = grade[0]?.length || 0;
-
-  // Filter to only words that actually exist in the grid
-  const validPalavras = useRef<string[]>([]);
-  if (validPalavras.current.length === 0) {
-    const upper = palavras.map(p => p.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
-    validPalavras.current = upper.filter(w => wordExistsInGrid(grade, w));
-    // If none valid, use all (fallback)
-    if (validPalavras.current.length === 0) validPalavras.current = upper;
-  }
+  const totalWords = validWords.length;
 
   const [dragStart, setDragStart] = useState<[number, number] | null>(null);
   const [dragEnd, setDragEnd] = useState<[number, number] | null>(null);
@@ -53,8 +115,6 @@ export default function ExercicioCacaPalavras({ textoContexto, grade, palavras, 
   const [foundWords, setFoundWords] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
-
-  const totalWords = validPalavras.current.length;
 
   const getLineCells = useCallback((start: [number, number], end: [number, number]): [number, number][] => {
     const [r1, c1] = start;
@@ -76,16 +136,20 @@ export default function ExercicioCacaPalavras({ textoContexto, grade, palavras, 
 
   const getCellFromEvent = useCallback((e: React.PointerEvent | PointerEvent): [number, number] | null => {
     if (!gridRef.current) return null;
-    const rect = gridRef.current.getBoundingClientRect();
-    const cellW = rect.width / cols;
-    const cellH = rect.height / rows;
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const c = Math.floor(x / cellW);
-    const r = Math.floor(y / cellH);
-    if (r < 0 || r >= rows || c < 0 || c >= cols) return null;
-    return [r, c];
-  }, [rows, cols]);
+    const gridEl = gridRef.current;
+    const children = gridEl.children;
+    // Use actual cell element positions for accurate hit-testing
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i] as HTMLElement;
+      const cr = child.getBoundingClientRect();
+      if (e.clientX >= cr.left && e.clientX <= cr.right && e.clientY >= cr.top && e.clientY <= cr.bottom) {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        return [r, c];
+      }
+    }
+    return null;
+  }, [cols]);
 
   const snapToDirection = useCallback((start: [number, number], raw: [number, number]): [number, number] => {
     const [r1, c1] = start;
@@ -131,8 +195,9 @@ export default function ExercicioCacaPalavras({ textoContexto, grade, palavras, 
     if (cells.length > 1) {
       const word = cells.map(([r, c]) => (grade[r]?.[c] || "").toUpperCase()).join("");
       const wordRev = word.split("").reverse().join("");
-      const match = validPalavras.current.find(p => p === word || p === wordRev);
+      const match = validWords.find(p => p === word || p === wordRev);
       if (match && !foundWords.has(match)) {
+        playCorrectSound();
         const newFoundCells = new Set(foundCells);
         cells.forEach(([r, c]) => newFoundCells.add(cellKey(r, c)));
         setFoundCells(newFoundCells);
@@ -150,7 +215,6 @@ export default function ExercicioCacaPalavras({ textoContexto, grade, palavras, 
     setIsDragging(false);
   };
 
-  // SVG selection line
   const renderSelectionLine = () => {
     if (!dragStart || !dragEnd || !gridRef.current) return null;
     const cells = getLineCells(dragStart, dragEnd);
@@ -170,40 +234,42 @@ export default function ExercicioCacaPalavras({ textoContexto, grade, palavras, 
     );
   };
 
-  // Render context text with target words bolded
-  const renderContextText = () => {
-    if (!textoContexto) return null;
-    return (
-      <div className="w-full bg-gradient-to-r from-primary/5 via-secondary/5 to-accent/5 rounded-2xl p-4 border border-border/50">
-        <div className="flex items-center gap-2 mb-2">
-          <Search size={16} className="text-primary" />
-          <p className="text-xs font-bold text-primary uppercase tracking-wide">📖 Encontre as palavras no caça-palavras</p>
-        </div>
-        <p className="text-sm text-foreground/80 leading-relaxed">
-          {textoContexto.split(/\s+/).map((word, i) => {
-            const clean = word.replace(/[.,;:!?"'()]/g, '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const isTarget = validPalavras.current.includes(clean);
-            const isFound = foundWords.has(clean);
-            return (
-              <span key={i}>
-                {isTarget ? (
-                  <strong className={`font-extrabold transition-colors ${isFound ? "text-green-600 line-through" : "text-primary"}`}>{word}</strong>
-                ) : word}
-                {' '}
-              </span>
-            );
-          })}
-        </p>
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col gap-4 items-center select-none touch-none w-full max-w-lg mx-auto">
-      {renderContextText()}
+      {/* Context text with highlighted target words */}
+      {textoContexto && (
+        <div className="w-full bg-gradient-to-r from-primary/5 via-secondary/5 to-accent/5 rounded-2xl p-4 border border-border/50">
+          <div className="flex items-center gap-2 mb-2">
+            <Search size={16} className="text-primary" />
+            <p className="text-xs font-bold text-primary uppercase tracking-wide">📖 Encontre as palavras destacadas no caça-palavras</p>
+          </div>
+          <p className="text-lg md:text-xl text-foreground/80 leading-relaxed font-medium">
+            {textoContexto.split(/\s+/).map((word, i) => {
+              const clean = normalize(word.replace(/[.,;:!?"'()]/g, ''));
+              const isTarget = validWords.includes(clean);
+              const isFound = foundWords.has(clean);
+              return (
+                <span key={i}>
+                  {isTarget ? (
+                    <strong className={`font-extrabold px-1.5 py-0.5 rounded-md transition-all ${
+                      isFound 
+                        ? "bg-green-100 text-green-600 line-through dark:bg-green-900/40 dark:text-green-300" 
+                        : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                    }`}>
+                      {isFound && <CheckCircle2 size={14} className="inline mr-0.5 -mt-0.5" />}
+                      {word}
+                    </strong>
+                  ) : word}
+                  {' '}
+                </span>
+              );
+            })}
+          </p>
+        </div>
+      )}
 
       <p className="text-xs text-muted-foreground text-center">
-        👆 Arraste na horizontal, vertical ou <strong>diagonal</strong> para encontrar as palavras!
+        👆 Arraste sobre as letras na <strong>horizontal</strong>, <strong>vertical</strong> ou <strong>diagonal</strong> para encontrar {totalWords} palavras!
       </p>
 
       {/* Grid */}
@@ -243,32 +309,7 @@ export default function ExercicioCacaPalavras({ textoContexto, grade, palavras, 
         {renderSelectionLine()}
       </div>
 
-      {/* Words list */}
-      <div className="flex flex-wrap gap-2 justify-center">
-        {palavras.map((p, i) => {
-          const upper = p.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          const found = foundWords.has(upper);
-          const exists = validPalavras.current.includes(upper);
-          if (!exists) return null; // Hide words not in grid
-          return (
-            <motion.span
-              key={i}
-              animate={found ? { scale: [1, 1.15, 1] } : {}}
-              className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${
-                found
-                  ? "border-green-500 bg-green-100 text-green-700 line-through dark:bg-green-900/30 dark:text-green-300"
-                  : "border-border bg-card text-foreground shadow-sm"
-              }`}
-            >
-              {found && <CheckCircle2 size={12} className="inline mr-1" />}
-              {p.toUpperCase()}
-            </motion.span>
-          );
-        })}
-      </div>
-
-      {/* Progress indicator */}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm font-bold text-muted-foreground">
         {foundWords.size} de {totalWords} palavras encontradas
       </p>
     </div>

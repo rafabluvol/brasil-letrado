@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import guaraCoin from "@/assets/guara-coin.png";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, CheckCircle2, XCircle, ArrowRight, Sparkles, Volume2, RefreshCw, Loader2, BookOpen, Play, Pause, SkipForward, RotateCcw, X, Share2, Wand2, ChevronRight, PanelRightOpen, PanelRightClose, Lightbulb } from "lucide-react";
 import CinematicScene from "@/components/CinematicScene";
@@ -23,6 +24,7 @@ import ExerciseHintBubble from "@/components/ExerciseHintBubble";
 import ExercicioLeituraTrecho from "@/components/exercicios/ExercicioLeituraTrecho";
 import VideoWaitingScreen from "@/components/VideoWaitingScreen";
 import ExercicioLacuna from "@/components/exercicios/ExercicioLacuna";
+import ExercicioLacunasParagrafo from "@/components/exercicios/ExercicioLacunasParagrafo";
 import ExercicioPostVideo from "@/components/exercicios/ExercicioPostVideo";
 import ExercicioPrevisao from "@/components/exercicios/ExercicioPrevisao";
 import ExercicioForca from "@/components/exercicios/ExercicioForca";
@@ -33,6 +35,7 @@ import ExercicioGramaticaCaindo from "@/components/exercicios/ExercicioGramatica
 import ExerciseBreadcrumb from "@/components/ExerciseBreadcrumb";
 import StoryFrameImage from "@/components/StoryFrameImage";
 import ExerciseProgressWrapper from "@/components/ExerciseProgressWrapper";
+
 
 
 const CATEGORIA_LABELS: Record<string, { label: string; icon: string; colorClass: string }> = {
@@ -84,6 +87,9 @@ export default function Atividade() {
   const [selectedArchiveItem, setSelectedArchiveItem] = useState<number | null>(null);
   const firstSceneRef = useRef<{ image: string; description: string } | null>(null);
 
+  // Progressive scene unlock: scenes are generated ahead but locked until milestones
+  const [unlockedScenes, setUnlockedScenes] = useState<Set<number>>(new Set());
+
   // Scene player states
   const [currentScene, setCurrentScene] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -99,6 +105,22 @@ export default function Atividade() {
   const ttsWarningShownRef = useRef(false);
   // Track video generation in progress to avoid duplicates
   const videoGenInProgress = useRef<Set<number>>(new Set());
+
+  // Narration + subtitles state for auto-play
+  const [sceneNarrations, setSceneNarrations] = useState<Record<number, { subtitles: { text_pt: string; text_en: string; display_seconds: number }[]; narration_text: string }>>({});
+  const [currentSubtitleIdx, setCurrentSubtitleIdx] = useState(0);
+  const [autoPlaying, setAutoPlaying] = useState(false);
+  const autoPlayingRef = useRef(false);
+  const [waitingToStart, setWaitingToStart] = useState(false);
+  const subtitleTimerRef = useRef<number | null>(null);
+  const subtitleTimersRef = useRef<number[]>([]);
+  const autoAdvanceRef = useRef<number | null>(null);
+  const pausedAtRef = useRef<number | null>(null);
+
+  // Video queue refs (serial generation to avoid rate limits)
+
+  // Lacuna phased paragraph tracking
+  const [lacunaPhase, setLacunaPhase] = useState(0);
 
   // Linear exercise flow — 8 steps total for story mode
 
@@ -146,7 +168,7 @@ export default function Atividade() {
     ? CATEGORIA_LABELS[exercicio.categoria] || CATEGORIA_LABELS.interpretacao
     : null;
 
-  // Archive a scene when page is revealed
+  // Archive a scene when page is revealed (generated, may still be locked)
   const archiveScene = useCallback((pageIdx: number, imgUrl?: string) => {
     const page = atividade.storyPages?.[pageIdx];
     if (!page) return;
@@ -157,6 +179,14 @@ export default function Atividade() {
     const exists = sceneArchive.current.find(a => a.type === 'scene' && a.idx === pageIdx);
     if (!exists) {
       sceneArchive.current.push({ type: 'scene', idx: pageIdx, title: page.titulo, image: imgUrl });
+      setArchiveVersion(v => v + 1);
+      // Auto-open sidebar when first item is added
+      if (sceneArchive.current.length === 1) {
+        setShowVideoSidebar(true);
+      }
+    } else if (imgUrl && exists && !exists.image) {
+      // Update image if it was generated later
+      exists.image = imgUrl;
       setArchiveVersion(v => v + 1);
     }
   }, [atividade]);
@@ -171,41 +201,75 @@ export default function Atividade() {
     }
   }, [allExercicios]);
 
-  // Generate image for a story page
+  // Generate image for a story page (with exponential backoff for 429s)
   const generatePageImage = useCallback(async (pageIdx: number) => {
     const page = atividade.storyPages?.[pageIdx];
     if (!page || pageImages[pageIdx]) return;
 
-    // Measure illustration container for aspect-ratio-matched generation
     const containerW = illustrationRef.current?.clientWidth || 600;
     const containerH = illustrationRef.current?.clientHeight || 400;
 
     setGeneratingImagePage(pageIdx);
-    try {
-      const { data, error } = await supabase.functions.invoke("generate-story-image", {
-        body: {
-          description: page.descricaoImagem,
-          bookId: atividade.id,
-          pageNumber: page.numero,
-          characterSheet: (atividade as any).characterSheet || '',
-          targetWidth: containerW,
-          targetHeight: containerH,
-        },
-      });
-      if (error) throw error;
-      if (data?.imageUrl) {
-        setPageImages(prev => ({ ...prev, [pageIdx]: data.imageUrl }));
-        archiveScene(pageIdx, data.imageUrl);
-        setExerciseImageRevealed(true);
+    const maxRetries = 5;
+    let delay = 5000;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const { data, error } = await supabase.functions.invoke("generate-story-image", {
+          body: {
+            description: page.descricaoImagem,
+            bookId: atividade.id,
+            pageNumber: page.numero,
+            characterSheet: (atividade as any).characterSheet || '',
+            targetWidth: containerW,
+            targetHeight: containerH,
+          },
+        });
+        if (error) {
+          const errMsg = typeof error === 'object' && error.message ? error.message : String(error);
+          const isRetryable = errMsg.includes('429') || errMsg.toLowerCase().includes('rate limit') || errMsg.toLowerCase().includes('rate limited') || errMsg.toLowerCase().includes('timeout') || errMsg.includes('500') || errMsg.toLowerCase().includes('non-2xx');
+          if (isRetryable && attempt < maxRetries) {
+            const jitter = Math.random() * delay * 0.5;
+            await new Promise(r => setTimeout(r, delay + jitter));
+            delay *= 2;
+            continue;
+          }
+          throw error;
+        }
+        if (data?.error && (data.error.includes('Rate limited') || data.error.includes('429') || data.error.includes('timeout'))) {
+          if (attempt < maxRetries) {
+            const jitter = Math.random() * delay * 0.5;
+            await new Promise(r => setTimeout(r, delay + jitter));
+            delay *= 2;
+            continue;
+          }
+        }
+        if (data?.imageUrl) {
+          setPageImages(prev => ({ ...prev, [pageIdx]: data.imageUrl }));
+          archiveScene(pageIdx, data.imageUrl);
+          setExerciseImageRevealed(true);
+          setGeneratingImagePage(null);
+          return;
+        }
+      } catch (err) {
+        if (attempt < maxRetries) {
+          const errMsg = typeof err === 'object' && (err as any)?.message ? (err as any).message : String(err);
+          if (errMsg.includes('429') || errMsg.toLowerCase().includes('rate limit') || errMsg.toLowerCase().includes('rate limited') || errMsg.toLowerCase().includes('timeout') || errMsg.includes('500') || errMsg.toLowerCase().includes('non-2xx')) {
+            const jitter = Math.random() * delay * 0.5;
+            await new Promise(r => setTimeout(r, delay + jitter));
+            delay *= 2;
+            continue;
+          }
+        }
+        console.error("Error generating image:", err);
+        break;
       }
-    } catch (err) {
-      console.error("Error generating image:", err);
-      const label = encodeURIComponent(`Cena ${pageIdx + 1}`);
-      setPageImages(prev => ({ ...prev, [pageIdx]: `https://placehold.co/${containerW}x${containerH}/png?text=${label}` }));
-      setExerciseImageRevealed(true);
-    } finally {
-      setGeneratingImagePage(null);
     }
+    // Fallback placeholder
+    const label = encodeURIComponent(`Cena ${pageIdx + 1}`);
+    setPageImages(prev => ({ ...prev, [pageIdx]: `https://placehold.co/${containerW}x${containerH}/png?text=${label}` }));
+    setExerciseImageRevealed(true);
+    setGeneratingImagePage(null);
   }, [atividade, pageImages]);
 
   const handleAnswer = () => {
@@ -283,17 +347,58 @@ export default function Atividade() {
 
   // ── Linear 8-step exercise flow ────────────────────────────────────────────
 
-  // Image generation milestones: after completing step N → generate scene image M
+  // Image generation milestones: after completing step N → UNLOCK scene M
   const LINEAR_IMAGE_SCHEDULE: Record<number, number> = { 1: 0, 3: 1, 5: 2, 7: 3 }; // after every 2 exercises
 
+  // Generate scene 0 immediately when exercises start (locked), and pre-add all scenes to archive
+  useEffect(() => {
+    if (!hasIntegratedExercises || currentIdx < 0) return;
+    // On first exercise start, generate scene 0 image (locked)
+    if (!pageImages[0] && generatingImagePage !== 0) {
+      generatePageImage(0);
+    }
+    // Pre-add all scene entries to sidebar (locked, no image yet)
+    const totalPages = atividade.storyPages?.length || 4;
+    for (let i = 0; i < totalPages; i++) {
+      const exists = sceneArchive.current.find(a => a.type === 'scene' && a.idx === i);
+      if (!exists) {
+        const page = atividade.storyPages?.[i];
+        if (page) {
+          sceneArchive.current.push({ type: 'scene', idx: i, title: page.titulo, image: undefined });
+        }
+      }
+    }
+    setArchiveVersion(v => v + 1);
+    if (!showVideoSidebar) setShowVideoSidebar(true);
+  }, [currentIdx, hasIntegratedExercises]);
+
+  const unlockScene = useCallback((sceneIdx: number) => {
+    setUnlockedScenes(prev => {
+      const next = new Set(prev);
+      next.add(sceneIdx);
+      return next;
+    });
+  }, []);
+
   const advanceLinearStep = (completedStep: number) => {
-    // Trigger image generation silently
+    // Trigger scene unlock at milestones
     const imgIdx = LINEAR_IMAGE_SCHEDULE[completedStep];
     if (imgIdx !== undefined) {
-      generatePageImage(imgIdx);
-      // Show interstitial after image milestone
+      // Unlock this scene
+      unlockScene(imgIdx);
+      // Generate image if not already cached
+      if (!pageImages[imgIdx]) {
+        generatePageImage(imgIdx);
+      }
+      // Pre-generate next scene (locked) in background
+      const nextSceneIdx = imgIdx + 1;
+      const totalPages = atividade.storyPages?.length || 4;
+      if (nextSceneIdx < totalPages && !pageImages[nextSceneIdx]) {
+        // Slight delay to avoid rate limiting
+        setTimeout(() => generatePageImage(nextSceneIdx), 2000);
+      }
+      // Always show interstitial
       setShowImageInterstitial(imgIdx);
-      // Don't advance yet - wait for user to dismiss interstitial
       // Save results on last step
       if (completedStep === TOTAL_LINEAR_STEPS - 1) {
         const oldData = getStudentData();
@@ -314,7 +419,7 @@ export default function Atividade() {
           if (newTrophies.length > 0) setWonTrophy(newTrophies[newTrophies.length - 1]);
         }).catch(console.error);
       }
-      return; // Don't advance yet
+      return; // Don't advance yet - wait for user to dismiss interstitial
     }
     // No image milestone - advance normally
     if (completedStep === TOTAL_LINEAR_STEPS - 1) {
@@ -422,7 +527,12 @@ export default function Atividade() {
       exerciseResults.current = [];
       sceneArchive.current = [];
       firstSceneRef.current = null;
-      bgGenTriggered.current = false;
+      videoQueueRef.current = [];
+      videoQueueRunning.current = false;
+      setSceneNarrations({});
+      setCurrentSubtitleIdx(0);
+      setAutoPlaying(false);
+      setUnlockedScenes(new Set());
       setArchiveVersion(0);
       setSelectedArchiveItem(null);
       toast({ title: "✨ Nova história gerada!", description: "Uma nova aventura foi criada para você." });
@@ -433,71 +543,91 @@ export default function Atividade() {
     }
   };
 
-  // Generate TTS audio for a scene
+  // Generate TTS audio for a scene using browser Web Speech API (free)
   const generateSceneAudio = useCallback(async (sceneIdx: number) => {
     const page = atividade.storyPages?.[sceneIdx];
     if (!page?.texto || sceneAudios[sceneIdx] || ttsUnavailable || audioGenInProgress.current.has(sceneIdx)) return;
+    if (!('speechSynthesis' in window)) {
+      console.warn("Web Speech API not supported");
+      setTtsUnavailable(true);
+      return;
+    }
 
     audioGenInProgress.current.add(sceneIdx);
     setLoadingAudios(prev => ({ ...prev, [sceneIdx]: true }));
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/elevenlabs-tts`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ text: page.texto, userId: user?.id, persist: true }),
+      // Use Web Speech API to synthesize and capture audio as blob URL
+      const audioUrl = await new Promise<string>((resolve, reject) => {
+        try {
+          const audioCtx = new AudioContext();
+          const dest = audioCtx.createMediaStreamDestination();
+          const mediaRecorder = new MediaRecorder(dest.stream, { mimeType: 'audio/webm' });
+          const chunks: Blob[] = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+          };
+          mediaRecorder.onstop = () => {
+            audioCtx.close();
+            const blob = new Blob(chunks, { type: 'audio/webm' });
+            resolve(URL.createObjectURL(blob));
+          };
+          mediaRecorder.onerror = () => {
+            audioCtx.close();
+            reject(new Error("MediaRecorder error"));
+          };
+
+          // Create oscillator to keep AudioContext alive (silent)
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0; // silent
+          osc.connect(gain);
+          gain.connect(dest);
+          osc.start();
+
+          const utterance = new SpeechSynthesisUtterance(page.texto);
+          utterance.lang = 'pt-BR';
+          utterance.rate = 0.9;
+          utterance.pitch = 1.1;
+
+          // Try to find a female Portuguese voice
+          const voices = speechSynthesis.getVoices();
+          const femaleNames = ['fernanda', 'luciana', 'francisca', 'raquel', 'vitória', 'vitoria', 'female', 'feminino'];
+          const ptVoices = voices.filter(v => v.lang === 'pt-BR' || v.lang.startsWith('pt'));
+          const femaleVoice = ptVoices.find(v => femaleNames.some(n => v.name.toLowerCase().includes(n))) ||
+                              ptVoices.find(v => v.name.toLowerCase().includes('google') && !v.name.toLowerCase().includes('male')) ||
+                              ptVoices[0];
+          if (femaleVoice) utterance.voice = femaleVoice;
+
+          mediaRecorder.start();
+
+          utterance.onend = () => {
+            osc.stop();
+            setTimeout(() => mediaRecorder.stop(), 200);
+          };
+          utterance.onerror = (e) => {
+            osc.stop();
+            mediaRecorder.stop();
+            reject(new Error(`Speech synthesis error: ${e.error}`));
+          };
+
+          speechSynthesis.speak(utterance);
+        } catch (e) {
+          reject(e);
         }
-      );
+      });
 
-      const contentType = response.headers.get("content-type") || "";
-
-      if (!response.ok) {
-        const payload = contentType.includes("application/json")
-          ? await response.json().catch(() => null)
-          : null;
-        const providerCode = payload?.code || "";
-        const providerMessage = String(payload?.error || "TTS failed");
-        const normalizedMessage = providerMessage.toLowerCase();
-        const quotaExceeded = response.status === 429 || providerCode === "QUOTA_EXCEEDED" || normalizedMessage.includes("quota");
-
-        if (quotaExceeded) {
-          setTtsUnavailable(true);
-          if (!ttsWarningShownRef.current) {
-            ttsWarningShownRef.current = true;
-            toast({
-              title: "Narration temporarily unavailable",
-              description: "We’ll keep the story running with video and subtitles while voice credits are unavailable.",
-            });
-          }
-          return;
-        }
-
-        throw new Error(providerMessage);
-      }
-
-      let audioUrl: string | undefined;
-      if (contentType.includes("application/json")) {
-        const json = await response.json();
-        audioUrl = json.audioUrl;
-      } else {
-        const blob = await response.blob();
-        audioUrl = URL.createObjectURL(blob);
-      }
-
-      if (!audioUrl) throw new Error("Audio URL missing from TTS response");
       setSceneAudios(prev => ({ ...prev, [sceneIdx]: audioUrl }));
     } catch (err) {
-      console.error("TTS error:", err);
+      console.error("Browser TTS error:", err);
+      // Fallback: mark audio as a special "use-speech-direct" flag
+      // so playback uses speechSynthesis.speak() directly
+      setSceneAudios(prev => ({ ...prev, [sceneIdx]: '__browser_tts__' }));
     } finally {
       audioGenInProgress.current.delete(sceneIdx);
       setLoadingAudios(prev => ({ ...prev, [sceneIdx]: false }));
     }
-  }, [atividade, sceneAudios, toast, ttsUnavailable, user?.id]);
+  }, [atividade, sceneAudios, ttsUnavailable]);
 
   // Generate video for a scene - tries external APIs, gracefully falls back to cinematic Ken Burns
   const generateSceneVideo = useCallback(async (sceneIdx: number, images?: Record<number, string>) => {
@@ -588,71 +718,255 @@ export default function Atividade() {
           }
         })
       );
-    }, 5000);
+    }, 3000);
 
     return () => window.clearInterval(interval);
   }, [sceneRequestIds, sceneVideos]);
 
-  // ── Silent background generation: remaining images + videos ────────────────
+  // ── Silent background generation: videos for available images (SERIALIZED) ──
 
-  // Track whether background generation has been kicked off
-  const bgGenTriggered = useRef(false);
+  // Queue-based serial video generation to avoid rate limits
+  const videoQueueRef = useRef<number[]>([]);
+  const videoQueueRunning = useRef(false);
 
-  // When the first image is generated, immediately kick off generation of all remaining images
-  useEffect(() => {
-    if (!hasIntegratedExercises) return;
-    if (bgGenTriggered.current) return;
-    // Wait until at least 1 image exists
-    const existingImages = Object.keys(pageImages);
-    if (existingImages.length === 0) return;
-    bgGenTriggered.current = true;
+  const processVideoQueue = useCallback(async () => {
+    if (videoQueueRunning.current) return;
+    videoQueueRunning.current = true;
 
-    // Generate remaining images in background
-    const totalPages = atividade.storyPages?.length || 4;
-    for (let i = 0; i < totalPages; i++) {
-      if (!pageImages[i]) {
-        generatePageImage(i);
+    while (videoQueueRef.current.length > 0) {
+      const sceneIdx = videoQueueRef.current.shift()!;
+      // Skip if already done or in progress
+      if (sceneVideos[sceneIdx] || videoGenInProgress.current.has(sceneIdx)) continue;
+      const imgUrl = pageImages[sceneIdx];
+      if (!imgUrl || imgUrl.includes('placehold.co')) continue;
+
+      console.log(`[Video Queue] Starting scene ${sceneIdx}`);
+      await generateSceneVideo(sceneIdx);
+
+      // Short delay between requests (with $5+ credit, rate limit is higher)
+      if (videoQueueRef.current.length > 0) {
+        await new Promise(r => setTimeout(r, 3000));
       }
     }
-  }, [pageImages, hasIntegratedExercises]);
+    videoQueueRunning.current = false;
+  }, [generateSceneVideo, pageImages, sceneVideos]);
 
-  // When an image becomes available, silently generate the video so it's ready for FASE 2
+  // When an image becomes available, add to serial queue (NOT parallel)
+  // Also pre-generate narration data in background (no audio playback)
   useEffect(() => {
     if (!hasIntegratedExercises) return;
+    let added = false;
     Object.entries(pageImages).forEach(([idxStr, imgUrl]) => {
       const idx = Number(idxStr);
-      if (imgUrl && !sceneVideos[idx] && !generatingVideos[idx] && !videoGenInProgress.current.has(idx)) {
-        generateSceneVideo(idx);
+      if (imgUrl && !imgUrl.includes('placehold.co') && !sceneVideos[idx] && !generatingVideos[idx] && !videoGenInProgress.current.has(idx)) {
+        if (!videoQueueRef.current.includes(idx)) {
+          videoQueueRef.current.push(idx);
+          added = true;
+        }
+      }
+      // Pre-generate narration (subtitles) in background — no audio played
+      if (imgUrl && !imgUrl.includes('placehold.co') && !sceneNarrations[idx]) {
+        generateSceneNarration(idx);
       }
     });
+    if (added) processVideoQueue();
   }, [pageImages]);
 
   // ── End effects ─────────────────────────────────────────────────────────────
 
-  // Handle scene player - generate ONLY the first scene, then phased
+  // Generate narration data (subtitles + TTS text) for a scene
+  const generateSceneNarration = useCallback(async (sceneIdx: number) => {
+    if (sceneNarrations[sceneIdx]) return sceneNarrations[sceneIdx];
+    const page = atividade.storyPages?.[sceneIdx];
+    if (!page?.texto) return null;
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-scene-narration", {
+        body: {
+          sceneText: page.texto,
+          sceneIndex: sceneIdx,
+          totalScenes: atividade.storyPages?.length || 4,
+          level: atividade.ano || "7-9",
+        },
+      });
+      if (error || !data?.subtitles) return null;
+      setSceneNarrations(prev => ({ ...prev, [sceneIdx]: data }));
+      return data;
+    } catch (err) {
+      console.warn("Narration gen error:", err);
+      return null;
+    }
+  }, [atividade, sceneNarrations]);
+
+  // Auto-play a single scene: video + audio + subtitles synced
+  const autoPlayScene = useCallback(async (sceneIdx: number) => {
+    // Clear ALL previous timers
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    subtitleTimersRef.current.forEach(t => clearTimeout(t));
+    subtitleTimersRef.current = [];
+    if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+    // Stop any existing audio
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+
+    setCurrentSubtitleIdx(0);
+    setCurrentScene(sceneIdx);
+
+    // Get narration data
+    let narration = sceneNarrations[sceneIdx];
+    if (!narration) {
+      narration = await generateSceneNarration(sceneIdx) as any;
+    }
+
+    // Audio will be played via direct browser TTS at playback time — no pre-generation needed
+
+    // Wait a tick for state to settle
+    await new Promise(r => setTimeout(r, 200));
+
+    const totalPages = atividade.storyPages?.length || 4;
+
+    // --- SYNCHRONIZED START: video + audio + subtitles all at once ---
+    const startAll = () => {
+      // 1) Start video
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(console.error);
+      }
+
+      // 2) Start subtitles exactly now
+      if (narration?.subtitles?.length) {
+        let elapsed = 0;
+        narration.subtitles.forEach((sub: any, i: number) => {
+          const timer = window.setTimeout(() => {
+            setCurrentSubtitleIdx(i);
+          }, elapsed * 1000);
+          subtitleTimersRef.current.push(timer);
+          elapsed += sub.display_seconds || 3;
+          if (i === 0) subtitleTimerRef.current = timer;
+        });
+      }
+
+      // 3) Calculate total duration for auto-advance
+      const subtitleDuration = narration?.subtitles?.reduce((a: number, s: any) => a + (s.display_seconds || 3), 0) || 8;
+
+      // 4) Auto-advance to next scene
+      autoAdvanceRef.current = window.setTimeout(() => {
+        const nextIdx = sceneIdx + 1;
+        if (nextIdx < totalPages && autoPlayingRef.current) {
+          autoPlayScene(nextIdx);
+        } else {
+          autoPlayingRef.current = false;
+          setAutoPlaying(false);
+          setIsPlaying(false);
+        }
+      }, (subtitleDuration + 1.5) * 1000);
+    };
+
+    // 3) Start audio — and sync everything to when audio actually begins
+    const audioUrl = sceneAudios[sceneIdx];
+    setIsPlaying(true);
+
+    if (audioUrl && audioUrl !== '__browser_tts__') {
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      // Wait for audio to be ready, then start everything together
+      audio.oncanplaythrough = () => {
+        audio.play().catch(console.error);
+        startAll();
+      };
+      audio.onerror = () => startAll(); // fallback: start without audio
+      audio.load();
+    } else if (audioUrl === '__browser_tts__' || (!audioUrl && 'speechSynthesis' in window)) {
+      // Direct browser TTS - start everything together
+      const page = atividade.storyPages?.[sceneIdx];
+      if (page?.texto) {
+        speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(page.texto);
+        utterance.lang = 'pt-BR';
+        utterance.rate = 0.9;
+        utterance.pitch = 1.1;
+        const voices = speechSynthesis.getVoices();
+        const femaleNames = ['fernanda', 'luciana', 'francisca', 'raquel', 'vitória', 'vitoria', 'female', 'feminino'];
+        const ptVoices = voices.filter(v => v.lang === 'pt-BR' || v.lang.startsWith('pt'));
+        const femaleVoice = ptVoices.find(v => femaleNames.some(n => v.name.toLowerCase().includes(n))) ||
+                            ptVoices.find(v => v.name.toLowerCase().includes('google') && !v.name.toLowerCase().includes('male')) ||
+                            ptVoices[0];
+        if (femaleVoice) utterance.voice = femaleVoice;
+        // Start speech and everything else simultaneously
+        speechSynthesis.speak(utterance);
+        startAll();
+      } else {
+        startAll();
+      }
+    } else {
+      startAll();
+    }
+  }, [sceneNarrations, sceneAudios, generateSceneNarration, generateSceneAudio, atividade, ttsUnavailable]);
+
+  // Handle scene player - auto-play all scenes
   const handleOpenScenePlayer = async () => {
     setGeneratingScenes(true);
-    const ensuredImages: Record<number, string> = { ...pageImages };
 
-    // Only generate image + audio + video for scene 0
-    if (!ensuredImages[0]) {
-      await generatePageImage(0);
+    // Reset TTS unavailable flag so we retry with fresh credits
+    setTtsUnavailable(false);
+    ttsWarningShownRef.current = false;
+
+    const ensuredImages: Record<number, string> = { ...pageImages };
+    const totalScenes = atividade.storyPages?.length || 4;
+
+    // Generate ALL missing images first (scenes may have been skipped via Passar Direto)
+    for (let i = 0; i < totalScenes; i++) {
+      if (!ensuredImages[i] && !pageImages[i]) {
+        try {
+          await generatePageImage(i);
+          // Small delay to get updated state
+          await new Promise(r => setTimeout(r, 300));
+          // Get latest from state
+          setPageImages(prev => {
+            Object.assign(ensuredImages, prev);
+            return prev;
+          });
+        } catch (err) {
+          console.warn(`Failed to generate image for scene ${i}`, err);
+        }
+      }
     }
 
     await new Promise(r => setTimeout(r, 150));
-
     setPageImages(prev => {
       Object.assign(ensuredImages, prev);
       return prev;
     });
 
-    // Generate audio and video for first scene only
-    await generateSceneAudio(0);
-    generateSceneVideo(0, ensuredImages);
+    // Queue video generation for ALL scenes that have images
+    for (let i = 0; i < totalScenes; i++) {
+      const imgUrl = pageImages[i] || ensuredImages[i];
+      if (imgUrl && !imgUrl.includes('placehold.co') && !sceneVideos[i] && !videoGenInProgress.current.has(i)) {
+        if (!videoQueueRef.current.includes(i)) {
+          videoQueueRef.current.push(i);
+        }
+      }
+    }
+    processVideoQueue();
+
+    // Pre-generate narration for ALL scenes (subtitles only, no audio playback)
+    await Promise.allSettled(
+      Array.from({ length: totalScenes }, (_, i) => generateSceneNarration(i))
+    );
+
+    // Mark all scenes to use direct browser TTS at playback time (no pre-play)
+    const presetAudios: Record<number, string> = {};
+    for (let i = 0; i < totalScenes; i++) {
+      if (!sceneAudios[i]) presetAudios[i] = '__browser_tts__';
+    }
+    if (Object.keys(presetAudios).length > 0) {
+      setSceneAudios(prev => ({ ...prev, ...presetAudios }));
+    }
 
     setShowScenePlayer(true);
     setCurrentScene(0);
-    setIsPlaying(true);
+    setAutoPlaying(false);
+    autoPlayingRef.current = false;
+    setWaitingToStart(true);
     setGeneratingScenes(false);
   };
 
@@ -667,7 +981,7 @@ export default function Atividade() {
         return prev;
       });
     }
-    await generateSceneAudio(nextIdx);
+    // Audio handled at playback time via direct browser TTS
     generateSceneVideo(nextIdx, ensuredImages);
     setIsPlaying(true);
     setCurrentScene(nextIdx);
@@ -700,85 +1014,109 @@ export default function Atividade() {
   };
 
   const playScene = useCallback((idx: number) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-
-    const audioUrl = sceneAudios[idx];
-    if (audioUrl) {
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-      audio.play().catch(console.error);
-      audio.onended = () => {
-        setIsPlaying(false);
-      };
-      setIsPlaying(true);
-    } else {
-      setIsPlaying(!!sceneVideos[idx]);
-    }
-
-    // Restart video from beginning
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(console.error);
-    }
-  }, [sceneAudios, sceneVideos]);
+    // Stop everything and replay properly via autoPlayScene
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    subtitleTimersRef.current.forEach(t => clearTimeout(t));
+    subtitleTimersRef.current = [];
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+    autoPlayingRef.current = false;
+    setAutoPlaying(false);
+    setTimeout(() => autoPlayScene(idx), 100);
+  }, [autoPlayScene]);
 
   useEffect(() => {
-    if (showScenePlayer && isPlaying) {
-      playScene(currentScene);
-    }
+    // No-op: playScene already handles everything via autoPlayScene
   }, [currentScene, showScenePlayer]);
 
-  useEffect(() => {
-    if (showScenePlayer && sceneVideos[currentScene] && videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(console.error);
-    }
-  }, [showScenePlayer, currentScene, sceneVideos]);
+  // Removed: duplicate useEffect that was causing double video playback
 
   const handleNextScene = async () => {
     const nextIdx = currentScene + 1;
     if (nextIdx < (atividade.storyPages?.length || 0)) {
-      // Generate next scene phasedly if not already generated
-      if (!sceneVideos[nextIdx] && !sceneAudios[nextIdx]) {
-        setGeneratingVideos(prev => ({ ...prev, [nextIdx]: true }));
-        await handleGenerateNextScene(nextIdx);
-      } else {
-        setIsPlaying(true);
-        setCurrentScene(nextIdx);
-      }
+      // Stop auto-play timers
+      if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+      if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+      setAutoPlaying(true);
+      autoPlayingRef.current = true;
+      autoPlayScene(nextIdx);
     }
   };
 
   const handleReplayScene = () => {
-    playScene(currentScene);
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    subtitleTimersRef.current.forEach(t => clearTimeout(t));
+    subtitleTimersRef.current = [];
+    if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    autoPlayingRef.current = false;
+    setAutoPlaying(false);
+    // Small delay then replay current scene
+    setTimeout(() => autoPlayScene(currentScene), 100);
   };
 
+
   const handleTogglePlay = () => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-        if (videoRef.current) videoRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        audioRef.current.play().catch(console.error);
-        if (videoRef.current) videoRef.current.play().catch(console.error);
-        setIsPlaying(true);
+    if (isPlaying) {
+      // PAUSE everything instantly
+      if (videoRef.current) videoRef.current.pause();
+      if (audioRef.current) audioRef.current.pause();
+      if ('speechSynthesis' in window && speechSynthesis.speaking) speechSynthesis.pause();
+      // Pause subtitle timers by clearing them and saving timestamp
+      subtitleTimersRef.current.forEach(t => clearTimeout(t));
+      subtitleTimersRef.current = [];
+      if (autoAdvanceRef.current) { clearTimeout(autoAdvanceRef.current); autoAdvanceRef.current = null; }
+      pausedAtRef.current = Date.now();
+      setIsPlaying(false);
+      setAutoPlaying(false);
+    } else {
+      // RESUME everything instantly
+      if (videoRef.current) videoRef.current.play().catch(console.error);
+      if (audioRef.current) audioRef.current.play().catch(console.error);
+      if ('speechSynthesis' in window && speechSynthesis.paused) speechSynthesis.resume();
+      // Re-schedule remaining subtitles from current position
+      const narration = sceneNarrations[currentScene];
+      if (narration?.subtitles?.length) {
+        let elapsed = 0;
+        narration.subtitles.forEach((sub: any, i: number) => {
+          if (i <= currentSubtitleIdx) {
+            elapsed += sub.display_seconds || 3;
+            return;
+          }
+          const timer = window.setTimeout(() => {
+            setCurrentSubtitleIdx(i);
+          }, elapsed * 1000);
+          subtitleTimersRef.current.push(timer);
+          elapsed += sub.display_seconds || 3;
+        });
+        // Re-schedule auto-advance
+        const remaining = narration.subtitles.slice(currentSubtitleIdx).reduce((a: number, s: any) => a + (s.display_seconds || 3), 0);
+        const totalPages = atividade.storyPages?.length || 4;
+        autoAdvanceRef.current = window.setTimeout(() => {
+          const nextIdx = currentScene + 1;
+          if (nextIdx < totalPages && autoPlayingRef.current) {
+            autoPlayScene(nextIdx);
+          } else {
+            autoPlayingRef.current = false;
+            setAutoPlaying(false);
+            setIsPlaying(false);
+          }
+        }, (remaining + 1.5) * 1000);
       }
-    } else if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        videoRef.current.play().catch(console.error);
-        setIsPlaying(true);
-      }
+      pausedAtRef.current = null;
+      setIsPlaying(true);
+      autoPlayingRef.current = true;
+      setAutoPlaying(true);
     }
   };
 
   const handleCloseScenePlayer = async () => {
+    // Clean up all timers
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
+    setAutoPlaying(false);
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
@@ -913,7 +1251,7 @@ export default function Atividade() {
                 🔥 {combo}x combo
               </motion.span>
             )}
-            <span className="badge-xp text-[11px]">⭐ {pontos} Brazukas</span>
+            <span className="badge-xp text-[11px] flex items-center gap-1"><img src={guaraCoin} alt="Guará" className="w-4 h-4" loading="lazy" /> {pontos} Guarás</span>
           </div>
         </div>
       </div>
@@ -925,7 +1263,7 @@ export default function Atividade() {
             {/* Sidebar toggle button - always visible */}
             <button
               onClick={() => setShowVideoSidebar(s => !s)}
-              className="hidden md:flex fixed left-2 top-1/2 -translate-y-1/2 z-40 items-center gap-1 px-2 py-3 rounded-r-xl bg-primary/90 text-white font-bold text-xs shadow-lg hover:bg-primary transition-colors"
+              className="hidden md:flex flex-shrink-0 items-center gap-1 px-2 py-3 rounded-xl bg-primary/90 text-white font-bold text-xs shadow-lg hover:bg-primary transition-colors"
               style={{ writingMode: 'vertical-lr', textOrientation: 'mixed' }}
             >
               <BookOpen size={14} />
@@ -952,30 +1290,49 @@ export default function Atividade() {
                         <X size={14} />
                       </button>
                     </div>
-                    {sceneArchive.current.map((item, i) => (
+                    {[...sceneArchive.current].sort((a, b) => a.idx - b.idx).map((item, i) => {
+                      const isScene = item.type === 'scene';
+                      const isLocked = isScene && !unlockedScenes.has(item.idx);
+                      const hasImage = !!item.image;
+
+                      return (
                       <div key={`${item.type}-${item.idx}-${i}`}>
                         <motion.button
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: i * 0.05 }}
-                          onClick={() => setSelectedArchiveItem(selectedArchiveItem === i ? null : i)}
+                          onClick={() => !isLocked && setSelectedArchiveItem(selectedArchiveItem === i ? null : i)}
                           className={`w-full text-left p-2 rounded-xl border transition-all text-xs ${
-                            selectedArchiveItem === i
+                            isLocked
+                              ? 'border-border/50 bg-muted/30 cursor-default'
+                              : selectedArchiveItem === i
                               ? 'border-primary bg-primary/10'
                               : 'border-border bg-card hover:border-primary/30'
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            {item.type === 'scene' ? (
+                            {isScene ? (
                               <>
-                                {item.image ? (
-                                  <img src={item.image} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                                ) : (
-                                  <span className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-lg flex-shrink-0">🎨</span>
-                                )}
+                                <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                                  {hasImage ? (
+                                    <img
+                                      src={item.image}
+                                      alt=""
+                                      className={`w-full h-full object-cover ${isLocked ? 'blur-sm brightness-50' : ''}`}
+                                    />
+                                  ) : (
+                                    <span className={`w-full h-full flex items-center justify-center text-lg ${isLocked ? 'bg-muted/50' : 'bg-primary/10'}`}>
+                                {isLocked ? '🔒' : '🎨'}
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="min-w-0">
-                                  <p className="font-bold text-foreground truncate">{item.title}</p>
-                                  <p className="text-muted-foreground">Cena {item.idx + 1}</p>
+                                  <p className={`font-bold truncate ${isLocked ? 'text-muted-foreground' : 'text-foreground'}`}>
+                                    {isLocked ? 'Bloqueada' : item.title}
+                                  </p>
+                                  <p className="text-muted-foreground text-xs">
+                                    {isLocked ? 'Complete os desafios' : `Cena ${item.idx + 1}`}
+                                  </p>
                                 </div>
                               </>
                             ) : (
@@ -1023,7 +1380,8 @@ export default function Atividade() {
                           )}
                         </AnimatePresence>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </motion.div>
               )}
@@ -1032,7 +1390,7 @@ export default function Atividade() {
         )}
 
         {/* Main content */}
-        <div className="flex-1 min-h-0 flex flex-col" style={{ marginLeft: 24, marginRight: 24, width: 'calc(100% - 48px)' }}>
+        <div className="flex-1 min-h-0 flex flex-col" style={{ marginRight: 24 }}>
         <AnimatePresence mode="wait">
           {/* INTRO / READING PHASE */}
           {isReading && (
@@ -1496,7 +1854,7 @@ export default function Atividade() {
                   animate={{ opacity: 1, y: 0 }}
                   className="text-lg font-bold text-foreground text-center mb-4 flex-shrink-0"
                 >
-                  🎨 Nova cena desbloqueada!
+                  🔓 Cena {imgIdx + 1} desbloqueada!
                 </motion.p>
 
                 <div className="w-full max-w-3xl flex-shrink-0">
@@ -1506,6 +1864,35 @@ export default function Atividade() {
                     title={page?.titulo || `Cena ${imgIdx + 1}`}
                   />
                 </div>
+
+                {/* Scene text below the image */}
+                {page?.texto && imgUrl && (() => {
+                  // Remove trailing ellipsis from text
+                  const cleanText = page.texto.replace(/\.{2,}$/g, '.').replace(/…$/g, '.');
+                  // Generate an engaging CTA question related to the scene
+                  const ctaQuestions = [
+                    `O que será que vai acontecer a seguir? 🤔`,
+                    `Será que nossos heróis vão conseguir? ✨`,
+                    `O que será que os espera na próxima cena? 🌟`,
+                    `Que surpresa será que vem por aí? 💫`,
+                  ];
+                  const ctaIdx = imgIdx % ctaQuestions.length;
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                      className="w-full max-w-3xl mt-4 p-4 rounded-xl bg-muted/50 border border-border flex-shrink-0"
+                    >
+                      <p className="text-base text-foreground leading-relaxed text-center" style={{ fontFamily: "'Georgia', 'Palatino', serif", display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
+                        {cleanText}
+                      </p>
+                      <p className="text-sm font-bold text-primary text-center mt-2 animate-pulse">
+                        {ctaQuestions[ctaIdx]}
+                      </p>
+                    </motion.div>
+                  );
+                })()}
 
                 <motion.button
                   initial={{ opacity: 0, y: 10 }}
@@ -1542,6 +1929,11 @@ export default function Atividade() {
             ];
             const ex = sequence[step];
             if (!ex) return null;
+
+            // Lacuna paragraph phase tracking
+            const lacunaData = minijogos?.lacunas;
+            const lacunaParagraphs = lacunaData?.paragrafos || (lacunaData?.frases ? [{ textoContexto: lacunaData.textoContexto, frases: lacunaData.frases }] : []);
+            const totalLacunaPhases = lacunaParagraphs.length || 1;
 
             const genStatus = (
               <div className="absolute top-2.5 right-3 z-20 flex items-center gap-1" title="Status das cenas">
@@ -1589,26 +1981,37 @@ export default function Atividade() {
                       ))}
                     </div>
                   </div>
-                  <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                    <span>{ex.emoji}</span> {ex.label}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      <span>{ex.emoji}</span> {ex.label}
+                    </p>
+                    <button
+                      onClick={() => {
+                        exerciseResults.current.push({ categoria: 'interpretacao', acertou: true, exercicioIdx: step });
+                        setPontos(p => p + 10);
+                        setAcertos(a => a + 1);
+                        advanceLinearStep(step);
+                      }}
+                      className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground border border-border/30 rounded px-2 py-0.5 transition-colors"
+                    >
+                      Passar Direto ⏭
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-y-auto p-5">
-                  {ex.type === 'lacunas' && ex.data?.frases?.length > 0 && (
-                    <ExercicioCompletar
+                  {ex.type === 'lacunas' && lacunaParagraphs.length > 0 && (
+                    <ExercicioLacunasParagrafo
                       key={`lacunas-${step}`}
-                      enunciado={ex.data.textoContexto || 'Complete as frases com base no texto:'}
-                      frases={ex.data.frases}
-                      opcoes={[]}
-                      respostaCorreta={0}
-                      onAnswer={(acertou, erros, chutes) => {
-                        exerciseResults.current.push({ categoria: 'interpretacao', acertou, exercicioIdx: step });
-                        setPontos(p => p + 10);
+                      paragrafos={lacunaParagraphs}
+                      onAllDone={() => {
+                        exerciseResults.current.push({ categoria: 'interpretacao', acertou: true, exercicioIdx: step });
+                        setPontos(p => p + 20);
                         setAcertos(a => a + 1);
+                        setLacunaPhase(0);
                         setTimeout(() => advanceLinearStep(step), 900);
                       }}
-                      showResult={false}
+                      onPhaseChange={(p) => setLacunaPhase(p)}
                     />
                   )}
 
@@ -1633,17 +2036,21 @@ export default function Atividade() {
                     </ExerciseProgressWrapper>
                   )}
 
-                  {ex.type === 'cruzadinha' && (ex.data?.palavras?.length > 0) && (
+                  {ex.type === 'cruzadinha' && (ex.data?.palavras?.length > 0) && (() => {
+                    const cruzRef = { completed: 0 };
+                    return (
                     <ExerciseProgressWrapper
-                      textoContexto={ex.data.textoContexto}
+                      textoContexto={undefined}
                       label={ex.label}
                       emoji={ex.emoji}
-                      answeredCount={0}
+                      answeredCount={cruzRef.completed}
                       totalCount={ex.data.palavras?.length || 0}
                     >
                       <ExercicioCruzadinha
                         key={`cruz-${step}`}
                         palavras={ex.data.palavras}
+                        textoContexto={ex.data.textoContexto}
+                        onProgress={(c, t) => { cruzRef.completed = c; }}
                         onComplete={() => {
                           exerciseResults.current.push({ categoria: 'vocabulario', acertou: true, exercicioIdx: step });
                           playCorrectSound();
@@ -1653,9 +2060,10 @@ export default function Atividade() {
                         }}
                       />
                     </ExerciseProgressWrapper>
-                  )}
+                    );
+                  })()}
 
-                  {ex.type === 'cacapalavras' && (ex.data?.grade?.length > 0) && (() => {
+                  {ex.type === 'cacapalavras' && (ex.data?.palavras?.length > 0) && (() => {
                     const totalW = (ex.data.palavras || []).length;
                     return (
                     <ExerciseProgressWrapper
@@ -1668,7 +2076,6 @@ export default function Atividade() {
                       <ExercicioCacaPalavras
                         key={`caca-${step}`}
                         textoContexto={ex.data.textoContexto}
-                        grade={ex.data.grade}
                         palavras={ex.data.palavras || []}
                         onProgress={(found, total) => setCacaProgress(found)}
                         onComplete={() => {
@@ -1695,10 +2102,11 @@ export default function Atividade() {
                         key={`ordenar-${step}`}
                         itensOrdenados={ex.data.itensOrdenados}
                         onComplete={(acertou) => {
-                          exerciseResults.current.push({ categoria: 'interpretacao', acertou, exercicioIdx: step });
-                          if (acertou) { playCorrectSound(); setPontos(p => p + 10); setAcertos(a => a + 1); }
-                          else { playWrongSound(); setCombo(0); }
-                          setTimeout(() => advanceLinearStep(step), 900);
+                          if (acertou) {
+                            exerciseResults.current.push({ categoria: 'interpretacao', acertou: true, exercicioIdx: step });
+                            playCorrectSound(); setPontos(p => p + 10); setAcertos(a => a + 1);
+                            setTimeout(() => advanceLinearStep(step), 900);
+                          }
                         }}
                         showResult={false}
                       />
@@ -1718,10 +2126,15 @@ export default function Atividade() {
                         textoContexto={undefined}
                         pares={ex.data.pares}
                         onComplete={(acertou) => {
-                          exerciseResults.current.push({ categoria: 'interpretacao', acertou, exercicioIdx: step });
-                          if (acertou) { playCorrectSound(); setPontos(p => p + 10); setAcertos(a => a + 1); }
-                          else { playWrongSound(); setCombo(0); }
-                          setTimeout(() => advanceLinearStep(step), 900);
+                          if (acertou) {
+                            exerciseResults.current.push({ categoria: 'interpretacao', acertou: true, exercicioIdx: step });
+                            playCorrectSound();
+                            setPontos(p => p + 10);
+                            setAcertos(a => a + 1);
+                            setTimeout(() => advanceLinearStep(step), 900);
+                          } else {
+                            playWrongSound();
+                          }
                         }}
                         showResult={false}
                       />
@@ -1741,10 +2154,15 @@ export default function Atividade() {
                         textoContexto={ex.data.textoContexto || ''}
                         afirmacoes={ex.data.afirmacoes}
                         onComplete={(acertou) => {
-                          exerciseResults.current.push({ categoria: 'interpretacao', acertou, exercicioIdx: step });
-                          if (acertou) { playCorrectSound(); setPontos(p => p + 12); setAcertos(a => a + 1); }
-                          else { playWrongSound(); setCombo(0); }
-                          setTimeout(() => advanceLinearStep(step), 900);
+                          if (acertou) {
+                            exerciseResults.current.push({ categoria: 'interpretacao', acertou: true, exercicioIdx: step });
+                            playCorrectSound();
+                            setPontos(p => p + 12);
+                            setAcertos(a => a + 1);
+                            setTimeout(() => advanceLinearStep(step), 900);
+                          } else {
+                            playWrongSound();
+                          }
                         }}
                       />
                     </ExerciseProgressWrapper>
@@ -1764,23 +2182,42 @@ export default function Atividade() {
                         classeAlvo={ex.data.classeAlvo || 'substantivo'}
                         palavras={ex.data.palavras}
                         onComplete={(acertou) => {
-                          exerciseResults.current.push({ categoria: 'gramatica', acertou, exercicioIdx: step });
-                          if (acertou) { playCorrectSound(); setPontos(p => p + 10); setAcertos(a => a + 1); }
-                          else { playWrongSound(); setCombo(0); }
-                          setTimeout(() => advanceLinearStep(step), 900);
+                          if (acertou) {
+                            exerciseResults.current.push({ categoria: 'gramatica', acertou: true, exercicioIdx: step });
+                            playCorrectSound();
+                            setPontos(p => p + 10);
+                            setAcertos(a => a + 1);
+                            setTimeout(() => advanceLinearStep(step), 900);
+                          } else {
+                            playWrongSound();
+                          }
                         }}
                       />
                     </ExerciseProgressWrapper>
                   )}
 
-                  {!ex.data && (
-                    <div className="flex flex-col items-center justify-center h-40 gap-3">
-                      <p className="text-muted-foreground text-sm">Exercício não disponível.</p>
-                      <button onClick={() => advanceLinearStep(step)} className="btn-hero px-6 py-2 text-sm flex items-center gap-2">
-                        Continuar <ArrowRight size={14} />
-                      </button>
-                    </div>
-                  )}
+                  {(() => {
+                    // Check if any exercise rendered - if not, show skip button
+                    const hasData = (
+                      (ex.type === 'lacunas' && (ex.data?.paragrafos?.length > 0 || ex.data?.frases?.length > 0)) ||
+                      (ex.type === 'forca' && ex.data?.palavra) ||
+                      (ex.type === 'cruzadinha' && ex.data?.palavras?.length > 0) ||
+                      (ex.type === 'cacapalavras' && ex.data?.palavras?.length > 0) ||
+                      (ex.type === 'ordenar' && ex.data?.itensOrdenados?.length > 0) ||
+                      (ex.type === 'ligar' && ex.data?.pares?.length > 0) ||
+                      (ex.type === 'vf' && ex.data?.afirmacoes?.length > 0) ||
+                      (ex.type === 'gramatica' && ex.data?.palavras?.length > 0)
+                    );
+                    if (hasData) return null;
+                    return (
+                      <div className="flex flex-col items-center justify-center h-40 gap-3">
+                        <p className="text-muted-foreground text-sm">Exercício não disponível.</p>
+                        <button onClick={() => advanceLinearStep(step)} className="btn-hero px-6 py-2 text-sm flex items-center gap-2">
+                          Continuar <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </motion.div>
             );
@@ -1822,10 +2259,10 @@ export default function Atividade() {
                   </div>
                   <div className="text-center">
                     <div className="flex items-center gap-1">
-                      <Sparkles size={20} className="text-xp" />
+                      <img src={guaraCoin} alt="Guará" className="w-6 h-6" loading="lazy" />
                       <p className="text-3xl font-bold text-xp">{pontos}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground font-semibold">Brazukas ganhos</p>
+                    <p className="text-xs text-muted-foreground font-semibold">Guarás ganhos</p>
                   </div>
                 </div>
 
@@ -1908,7 +2345,7 @@ export default function Atividade() {
                             ref={videoRef}
                             src={sceneVideos[currentScene]}
                             className="w-full h-full object-cover"
-                            autoPlay loop playsInline
+                            loop playsInline
                           />
                         </div>
                       ) : (
@@ -1922,34 +2359,89 @@ export default function Atividade() {
                           <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20" />
                         )
                       )}
+                      {/* Waiting to start overlay */}
+                      {waitingToStart && (
+                        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                          <motion.button
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ delay: 0.3, type: 'spring' }}
+                            onClick={() => {
+                              setWaitingToStart(false);
+                              setAutoPlaying(true);
+                              autoPlayingRef.current = true;
+                              setTimeout(() => autoPlayScene(0), 200);
+                            }}
+                            className="flex flex-col items-center gap-4 group cursor-pointer"
+                          >
+                            <div className="w-20 h-20 rounded-full bg-primary flex items-center justify-center shadow-2xl group-hover:bg-primary/80 transition-colors">
+                              <Play size={36} className="text-white ml-1" />
+                            </div>
+                            <span className="text-white font-bold text-lg drop-shadow-lg">Iniciar História</span>
+                          </motion.button>
+                        </div>
+                      )}
                       {/* Video waiting screen with facts while video is generating/polling */}
-                      {!sceneVideos[currentScene] && (generatingVideos[currentScene] || sceneRequestIds[currentScene]) && (
+                      {!waitingToStart && !sceneVideos[currentScene] && (generatingVideos[currentScene] || sceneRequestIds[currentScene]) && (
                         <VideoWaitingScreen visible={showVideoWaiting} />
                       )}
-                      {/* Cinema-style yellow subtitle at bottom */}
+                      {/* Cinema-style synced subtitles at bottom */}
                       <div className="absolute bottom-2 left-0 right-0 px-6 flex flex-col items-center pointer-events-none z-20">
                         <div className="max-w-3xl w-full">
-                          <div className="bg-black/50 backdrop-blur-sm rounded-lg px-5 py-2.5">
-                            <p
-                              className="text-center font-bold leading-relaxed drop-shadow-lg"
-                              style={{
-                                color: '#FFD700',
-                                fontSize: 'clamp(0.85rem, 1.5vw, 1.1rem)',
-                                textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.7)',
-                                fontFamily: "'Inter', sans-serif",
-                              }}
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={`sub-${currentScene}-${currentSubtitleIdx}`}
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -8 }}
+                              transition={{ duration: 0.3 }}
+                              className="bg-black/60 backdrop-blur-sm rounded-lg px-5 py-2.5"
                             >
-                              {atividade.storyPages[currentScene].texto}
-                            </p>
-                          </div>
+                              <p
+                                className="text-center font-bold leading-relaxed drop-shadow-lg"
+                                style={{
+                                  color: '#FFD700',
+                                  fontSize: 'clamp(0.85rem, 1.5vw, 1.1rem)',
+                                  textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.7)',
+                                  fontFamily: "'Inter', sans-serif",
+                                }}
+                              >
+                                {(() => {
+                                  const narration = sceneNarrations[currentScene];
+                                  if (narration?.subtitles?.[currentSubtitleIdx]) {
+                                    return narration.subtitles[currentSubtitleIdx].text_pt;
+                                  }
+                                  return atividade.storyPages![currentScene].texto;
+                                })()}
+                              </p>
+                              {/* English subtitle below */}
+                              {(() => {
+                                const narration = sceneNarrations[currentScene];
+                                const enText = narration?.subtitles?.[currentSubtitleIdx]?.text_en;
+                                if (enText) {
+                                  return (
+                                    <p className="text-center text-white/60 text-xs mt-1 italic" style={{ fontFamily: "'Inter', sans-serif" }}>
+                                      {enText}
+                                    </p>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </motion.div>
+                          </AnimatePresence>
                           <div className="flex items-center justify-center gap-3 mt-1.5">
                             <span className="text-white/40 text-[10px] font-medium tracking-wide uppercase">
-                              {atividade.storyPages[currentScene].titulo}
+                              {atividade.storyPages![currentScene].titulo}
                             </span>
                             <span className="text-white/20">•</span>
                             <span className="text-white/30 text-[10px]">
-                              {currentScene + 1}/{atividade.storyPages.length}
+                              {currentScene + 1}/{atividade.storyPages!.length}
                             </span>
+                            {autoPlaying && (
+                              <span className="text-green-400/60 text-[10px] flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" /> Auto
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1973,16 +2465,9 @@ export default function Atividade() {
                   {currentScene < (atividade.storyPages?.length || 0) - 1 ? (
                     <button
                       onClick={handleNextScene}
-                      disabled={generatingVideos[currentScene + 1]}
-                      className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/10 text-white font-bold text-sm hover:bg-white/20 transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/10 text-white font-bold text-sm hover:bg-white/20 transition-colors"
                     >
-                      {generatingVideos[currentScene + 1] ? (
-                        <><Loader2 size={14} className="animate-spin" /> Gerando...</>
-                      ) : sceneVideos[currentScene + 1] ? (
-                        <>Próxima <SkipForward size={16} /></>
-                      ) : (
-                        <>Gerar Próxima Cena <Sparkles size={14} /></>
-                      )}
+                      Próxima <SkipForward size={16} />
                     </button>
                   ) : (
                     <div className="flex items-center gap-2">

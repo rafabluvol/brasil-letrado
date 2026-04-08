@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
+import TreeSVG from "./forca/TreeSVG";
 
 interface Props {
   palavra: string;
@@ -11,95 +12,17 @@ interface Props {
 const MAX_ERRORS = 6;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-// Tree SVG: 6 stages of leaf loss (0 = full, 6 = bare)
-function TreeSVG({ errors, won }: { errors: number; won: boolean }) {
-  // Leaf clusters: 6 groups, each disappears at corresponding error count
-  const leafGroups = [
-    // Top crown
-    { cx: 70, cy: 28, rx: 22, ry: 18, stage: 1 },
-    // Upper left
-    { cx: 45, cy: 42, rx: 18, ry: 14, stage: 2 },
-    // Upper right
-    { cx: 95, cy: 42, rx: 18, ry: 14, stage: 3 },
-    // Mid left
-    { cx: 40, cy: 62, rx: 16, ry: 12, stage: 4 },
-    // Mid right
-    { cx: 100, cy: 62, rx: 16, ry: 12, stage: 5 },
-    // Bottom crown
-    { cx: 70, cy: 72, rx: 20, ry: 14, stage: 6 },
-  ];
-
-  // Flower petals for win state
-  const flowers = won ? [
-    { cx: 58, cy: 30 }, { cx: 82, cy: 25 }, { cx: 48, cy: 48 },
-    { cx: 92, cy: 44 }, { cx: 42, cy: 65 }, { cx: 98, cy: 60 },
-  ] : [];
-
-  return (
-    <svg viewBox="0 0 140 130" className="w-32 h-32">
-      {/* Ground */}
-      <ellipse cx="70" cy="118" rx="28" ry="6" fill="rgba(139,90,43,0.3)" />
-      {/* Trunk */}
-      <rect x="63" y="78" width="14" height="38" rx="7" fill="#8B5A2B" />
-      {/* Branches */}
-      <line x1="70" y1="85" x2="45" y2="65" stroke="#8B5A2B" strokeWidth="5" strokeLinecap="round" />
-      <line x1="70" y1="85" x2="95" y2="65" stroke="#8B5A2B" strokeWidth="5" strokeLinecap="round" />
-      <line x1="70" y1="78" x2="70" y2="45" stroke="#8B5A2B" strokeWidth="6" strokeLinecap="round" />
-      {/* Dry branch (appears at max errors) */}
-      {errors >= MAX_ERRORS && (
-        <>
-          <line x1="45" y1="65" x2="35" y2="50" stroke="#6B4423" strokeWidth="3" strokeLinecap="round" />
-          <line x1="95" y1="65" x2="105" y2="50" stroke="#6B4423" strokeWidth="3" strokeLinecap="round" />
-        </>
-      )}
-      {/* Leaf clusters */}
-      {leafGroups.map((leaf, i) => {
-        const visible = errors < leaf.stage;
-        return visible ? (
-          <motion.ellipse
-            key={i}
-            cx={leaf.cx}
-            cy={leaf.cy}
-            rx={leaf.rx}
-            ry={leaf.ry}
-            fill={won ? "#4ade80" : "#22c55e"}
-            opacity={won ? 1 : 0.85}
-            initial={false}
-            animate={{ opacity: visible ? 0.85 : 0, scale: visible ? 1 : 0 }}
-            transition={{ duration: 0.4 }}
-          />
-        ) : (
-          // Fallen leaf hint (small dot on ground)
-          <motion.circle
-            key={`fallen-${i}`}
-            cx={leaf.cx + (i % 2 === 0 ? -8 : 8)}
-            cy={112}
-            r={3}
-            fill="#86efac"
-            opacity={0.5}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 0.5, y: 0 }}
-          />
-        );
-      })}
-      {/* Flowers (win state) */}
-      {flowers.map((f, i) => (
-        <motion.g key={`flower-${i}`} initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: i * 0.1, type: "spring" }}>
-          <circle cx={f.cx} cy={f.cy} r={5} fill="#fb7185" opacity={0.9} />
-          <circle cx={f.cx} cy={f.cy} r={2} fill="#fef08a" />
-        </motion.g>
-      ))}
-    </svg>
-  );
-}
+/** Strip accents for comparison */
+const strip = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 export default function ExercicioForca({ palavra, dica, onComplete }: Props) {
   const wordUpper = palavra.toUpperCase();
+  const wordStripped = strip(wordUpper); // accent-free version for matching
   const [guessed, setGuessed] = useState<Set<string>>(new Set());
   const [finished, setFinished] = useState(false);
 
-  const errors = [...guessed].filter(l => !wordUpper.includes(l)).length;
-  const won = wordUpper.split("").every(c => c === " " || c === "-" || guessed.has(c));
+  const errors = [...guessed].filter(l => !wordStripped.includes(l)).length;
+  const won = wordStripped.split("").every(c => c === " " || c === "-" || guessed.has(c));
   const lost = errors >= MAX_ERRORS;
 
   const handleGuess = (letter: string) => {
@@ -107,8 +30,8 @@ export default function ExercicioForca({ palavra, dica, onComplete }: Props) {
     const next = new Set(guessed);
     next.add(letter);
     setGuessed(next);
-    const newErrors = [...next].filter(l => !wordUpper.includes(l)).length;
-    const newWon = wordUpper.split("").every(c => c === " " || c === "-" || next.has(c));
+    const newErrors = [...next].filter(l => !wordStripped.includes(l)).length;
+    const newWon = wordStripped.split("").every(c => c === " " || c === "-" || next.has(c));
     if (newWon || newErrors >= MAX_ERRORS) {
       setFinished(true);
       setTimeout(() => onComplete(), 1500);
@@ -124,7 +47,7 @@ export default function ExercicioForca({ palavra, dica, onComplete }: Props) {
 
       <div className="flex items-center gap-6 flex-wrap justify-center">
         {/* Tree */}
-        <TreeSVG errors={errors} won={won && finished} />
+        <TreeSVG errors={errors} won={won && finished} maxErrors={MAX_ERRORS} />
 
         <div className="flex flex-col items-center gap-3">
           {/* Leaf counter */}
@@ -141,28 +64,33 @@ export default function ExercicioForca({ palavra, dica, onComplete }: Props) {
             ))}
           </div>
 
-          {/* Word blanks */}
+          {/* Word blanks — show accented original when won, stripped while guessing */}
           <div className="flex gap-1.5 flex-wrap justify-center">
-            {wordUpper.split("").map((c, i) =>
-              c === " " ? (
+            {wordUpper.split("").map((originalChar, i) => {
+              const strippedChar = strip(originalChar);
+              const isRevealed = guessed.has(strippedChar);
+              // Show the accented original char when revealed or lost, stripped while hidden
+              const displayChar = isRevealed || lost ? originalChar : "_";
+
+              return originalChar === " " ? (
                 <span key={i} className="w-3" />
               ) : (
                 <motion.div
                   key={i}
-                  animate={guessed.has(c) ? { scale: [1, 1.25, 1] } : {}}
+                  animate={isRevealed ? { scale: [1, 1.25, 1] } : {}}
                   className="flex flex-col items-center"
                 >
                   <span className={`text-lg font-extrabold w-7 text-center transition-colors ${
-                    guessed.has(c)
+                    isRevealed
                       ? won ? 'text-green-500' : lost ? 'text-red-400' : 'text-foreground'
                       : lost ? 'text-red-400/60' : 'text-transparent'
                   }`}>
-                    {guessed.has(c) || lost ? c : "_"}
+                    {displayChar}
                   </span>
                   <div className="w-7 h-0.5 bg-border mt-0.5" />
                 </motion.div>
-              )
-            )}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -171,7 +99,7 @@ export default function ExercicioForca({ palavra, dica, onComplete }: Props) {
       <div className="flex flex-wrap justify-center gap-1.5 max-w-sm">
         {ALPHABET.map(letter => {
           const isGuessed = guessed.has(letter);
-          const isInWord = wordUpper.includes(letter);
+          const isInWord = wordStripped.includes(letter);
           return (
             <motion.button
               key={letter}

@@ -4,6 +4,7 @@ import { X, Sparkles, TrendingUp, TrendingDown, Target, ChevronRight, BookOpen, 
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getLevelInfo, calculateLevelFromXp } from "@/lib/level-system";
+import guaraCoin from "@/assets/guara-coin.png";
 import TutorArmario from "./TutorArmario";
 import TutorConquistas from "./TutorConquistas";
 
@@ -13,7 +14,7 @@ export default function TutorWidget() {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [panel, setPanel] = useState<PanelView>("home");
-  const [stats, setStats] = useState({ accuracy: 0, brazukas: 0, level: 1 });
+  const [stats, setStats] = useState({ accuracy: 0, guaras: 0, level: 1 });
   const [equippedLevel, setEquippedLevel] = useState<number | null>(null);
   const levelInfo = equippedLevel ? getLevelInfo(equippedLevel) : getLevelInfo(stats.level);
   const [categories, setCategories] = useState<{ name: string; label: string; rate: number; total: number }[]>([]);
@@ -57,7 +58,7 @@ export default function TutorWidget() {
 
       if (p) {
         const lvl = calculateLevelFromXp(p.total_xp || 0);
-        setStats({ brazukas: p.total_xp || 0, level: lvl, accuracy: 0 });
+        setStats({ guaras: p.total_xp || 0, level: lvl, accuracy: 0 });
       }
 
       if (perf) {
@@ -132,8 +133,8 @@ export default function TutorWidget() {
                 <span>{stats.accuracy}% acertos</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-xp">
-                <Sparkles size={14} />
-                <span>{stats.brazukas} Brazukas</span>
+                <img src={guaraCoin} alt="Guará" className="w-4 h-4" loading="lazy" />
+                <span>{stats.guaras} Guarás</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-info">
                 <Target size={14} />
@@ -237,7 +238,7 @@ export default function TutorWidget() {
 
                 {panel === "armario" && (
                   <TutorArmario
-                    currentXp={stats.brazukas}
+                    currentXp={stats.guaras}
                     equippedLevel={equippedLevel}
                     onEquip={handleEquip}
                     onBack={() => setPanel("home")}
@@ -246,7 +247,7 @@ export default function TutorWidget() {
 
                 {panel === "conquistas" && (
                   <TutorConquistas
-                    currentXp={stats.brazukas}
+                    currentXp={stats.guaras}
                     onBack={() => setPanel("home")}
                   />
                 )}

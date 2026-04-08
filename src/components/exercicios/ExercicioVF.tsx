@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 
 interface Afirmacao {
   frase: string;
@@ -25,19 +25,24 @@ export default function ExercicioVF({ textoContexto, afirmacoes, onComplete }: P
   const handleVerify = () => {
     setShowResult(true);
     const totalCorrect = afirmacoes.filter((a, i) => respostas[i] === a.correta).length;
-    onComplete(totalCorrect >= Math.ceil(afirmacoes.length * 0.75));
+    const allCorrect = totalCorrect === afirmacoes.length;
+    if (allCorrect) {
+      onComplete(true);
+    }
+    // If not all correct, do NOT call onComplete - user must retry
+  };
+
+  const handleRetry = () => {
+    setRespostas({});
+    setShowResult(false);
   };
 
   const allAnswered = afirmacoes.every((_, i) => respostas[i] !== undefined && respostas[i] !== null);
+  const totalCorrect = showResult ? afirmacoes.filter((a, i) => respostas[i] === a.correta).length : 0;
+  const allCorrect = totalCorrect === afirmacoes.length;
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      {/* Context text */}
-      <div className="bg-muted/50 rounded-xl px-4 py-3 border border-border">
-        <p className="text-xs text-muted-foreground font-semibold mb-1">📖 Leia o trecho:</p>
-        <p className="text-sm text-foreground leading-relaxed">{textoContexto}</p>
-      </div>
-
       <p className="text-sm font-bold text-foreground">Marque Verdadeiro (V) ou Falso (F) para cada afirmação:</p>
 
       <div className="space-y-3">
@@ -115,6 +120,15 @@ export default function ExercicioVF({ textoContexto, afirmacoes, onComplete }: P
         >
           Verificar Respostas
         </motion.button>
+      )}
+
+      {showResult && !allCorrect && (
+        <div className="mt-2 space-y-2">
+          <p className="text-sm font-bold text-destructive text-center">😊 Quase lá! Corrija as respostas erradas e tente novamente.</p>
+          <button onClick={handleRetry} className="btn-hero w-full flex items-center justify-center gap-2">
+            <RotateCcw size={16} /> Tentar Novamente
+          </button>
+        </div>
       )}
     </div>
   );

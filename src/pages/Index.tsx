@@ -1,14 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { BookOpen, ArrowRight, Sparkles, Loader2, BookText, Landmark, Globe, Microscope, Newspaper, Brain, Wand2, Eye, PenLine, Bot } from "lucide-react";
+import { BookOpen, ArrowRight, Sparkles, Loader2, Eye, PenLine, Bot } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import sabiaLogo from "@/assets/sabia-logo.png";
 import CuriosidadesLoading from "@/components/CuriosidadesLoading";
 import AnimatedSky from "@/components/AnimatedSky";
-import { ANOS_ESCOLARES, GENEROS_POR_ANO, TEMAS } from "@/data/bncc-content";
-import { getMateriasPorAno, getHabilidadesPorMateria, formatHabilidadeDropdown } from "@/data/bncc-habilidades";
-import BNCCPicker from "@/components/BNCCPicker";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function Index() {
@@ -21,16 +18,48 @@ export default function Index() {
   const [historiaAluno, setHistoriaAluno] = useState("");
   const [habilidade, setHabilidade] = useState("");
   const [loading, setLoading] = useState(false);
+  const [dailyMission, setDailyMission] = useState<any>(null);
+  const [missionLoaded, setMissionLoaded] = useState(false);
 
-  const generos = ano ? GENEROS_POR_ANO[ano] || [] : [];
+  // Load daily mission on mount
+  useEffect(() => {
+    const loadMission = async () => {
+      try {
+        const { data } = await supabase
+          .from("daily_missions")
+          .select("*")
+          .eq("ativo", true)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (data && data.length > 0) {
+          const m = data[0];
+          setDailyMission(m);
+          setAno(m.ano_escolar);
+          setGenero(m.genero_textual);
+          setTema(m.tema);
+          setHabilidade(m.habilidade_bncc || "");
+        }
+      } catch (err) {
+        console.error("Error loading daily mission:", err);
+      } finally {
+        setMissionLoaded(true);
+      }
+    };
+    loadMission();
+  }, []);
+
   const isCrieVoceMesmo = tema === "crie-voce-mesmo";
-  const habilidades = ano && tema && tema !== "crie-voce-mesmo" ? getHabilidadesPorMateria(ano, tema) : [];
-  const canStart = ano && genero && tema && historiaAluno.trim().length >= 10;
+  const hasMission = !!dailyMission;
 
   const handleStart = async () => {
+    // Use mission values or defaults
+    const finalAno = ano || "3";
+    const finalGenero = genero || "Conto";
+    const finalTema = tema || "portugues";
     setLoading(true);
     try {
-      const body: Record<string, string> = { ano, genero, tema };
+      const body: Record<string, string> = { ano: finalAno, genero: finalGenero, tema: finalTema };
       if (isCrieVoceMesmo) body.prompt = promptAluno;
       if (habilidade) body.habilidade = habilidade;
       body.historiaAluno = historiaAluno;
@@ -40,7 +69,7 @@ export default function Index() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      navigate("/atividade", { state: { atividade: data, ano, genero, tema, prompt: promptAluno, historiaAluno } });
+      navigate("/atividade", { state: { atividade: data, ano: finalAno, genero: finalGenero, tema: finalTema, prompt: promptAluno, historiaAluno } });
     } catch (err: any) {
       toast({
         title: "Erro ao gerar atividade",
@@ -129,187 +158,90 @@ export default function Index() {
           transition={{ delay: 0.3 }}
           className="max-w-4xl mx-auto bg-card/95 backdrop-blur-sm rounded-3xl p-8 md:p-12 shadow-[var(--shadow-elevated)] border border-border/60"
         >
-          <div id="comece-atividade" className="flex items-center gap-3.5 mb-10 scroll-mt-24">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/15 to-accent/15 flex items-center justify-center shadow-sm">
-              <BookOpen size={26} className="text-primary" />
-            </div>
-            <h3 className="font-display text-2xl md:text-3xl text-foreground tracking-tight">Comece sua atividade</h3>
-          </div>
-
-          <div className="space-y-8">
-            {/* Ano + Gênero side by side on desktop */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="flex items-center gap-2 text-sm md:text-base font-bold text-primary mb-2.5">
-                  <span className="text-lg">📅</span> Ano Escolar
-                </label>
-                <select
-                  value={ano}
-                  onChange={(e) => { setAno(e.target.value); setGenero(""); }}
-                  className="w-full h-13 px-5 rounded-xl bg-muted/70 border-2 border-border/50 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:outline-none font-semibold text-foreground text-[15px] transition-all"
+          <div id="comece-atividade" className="scroll-mt-24">
+            <div className="space-y-8">
+              {hasMission ? (
+                /* ─── MISSION MODE: Show mission title ─── */
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.5, type: "spring" }}
+                  className="text-center"
                 >
-                  <option value="">Selecione o ano</option>
-                  {ANOS_ESCOLARES.map((a) => (
-                    <option key={a.value} value={a.value}>{a.label}</option>
-                  ))}
-                </select>
-              </div>
+                  <motion.div
+                    animate={{ rotate: [0, -3, 3, -3, 0] }}
+                    transition={{ duration: 0.6, delay: 0.5 }}
+                    className="text-5xl mb-4"
+                  >
+                    🎯
+                  </motion.div>
+                  <h3 className="font-display text-2xl md:text-3xl font-extrabold text-foreground mb-2">
+                    Sua missão de hoje:{" "}
+                    <span className="bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
+                      {dailyMission.genero_textual}!
+                    </span>
+                  </h3>
+                  <p className="text-base text-muted-foreground font-semibold">
+                    Escreva uma ideia e eu transformo em uma aventura incrível! ✨
+                  </p>
+                </motion.div>
+              ) : (
+                /* ─── NO MISSION: Simple header ─── */
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-3.5 mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/15 to-accent/15 flex items-center justify-center shadow-sm">
+                      <BookOpen size={26} className="text-primary" />
+                    </div>
+                    <h3 className="font-display text-2xl md:text-3xl text-foreground tracking-tight">Crie sua história!</h3>
+                  </div>
+                  <p className="text-base text-muted-foreground font-semibold">
+                    Escreva uma ideia e a IA transforma em uma aventura com ilustrações! ✨
+                  </p>
+                </div>
+              )}
 
-              <div>
-                <label className="flex items-center gap-2 text-sm md:text-base font-bold text-primary mb-2.5">
-                  <span className="text-lg">📝</span> Gênero Textual
-                </label>
-                <select
-                  value={genero}
-                  onChange={(e) => setGenero(e.target.value)}
-                  disabled={!ano}
-                  className="w-full h-13 px-5 rounded-xl bg-muted/70 border-2 border-border/50 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:outline-none font-semibold text-foreground text-[15px] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <option value="">Selecione o gênero</option>
-                  {generos.map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Tema */}
-            <div>
-              <label className="flex items-center gap-2 text-sm md:text-base font-bold text-primary mb-4">
-                <span className="text-lg">🎯</span> Tema
-              </label>
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-3.5">
-                {TEMAS.map((t) => {
-                  const IconMap: Record<string, React.ComponentType<any>> = {
-                    portugues: BookText,
-                    historia: Landmark,
-                    geografia: Globe,
-                    ciencias: Microscope,
-                    atualidades: Newspaper,
-                    "inteligencia-artificial": Brain,
-                    "crie-voce-mesmo": Wand2,
-                  };
-                  const Icon = IconMap[t.value] || Sparkles;
-                  const isSelected = tema === t.value;
-                  const isBncc = ["portugues", "historia", "geografia", "ciencias"].includes(t.value);
-
-                  return (
-                    <motion.button
-                      key={t.value}
-                      whileHover={{ scale: 1.06, y: -3 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => { setTema(t.value); setHabilidade(""); }}
-                      className={`group relative flex flex-col items-center justify-center gap-2.5 p-4 md:p-5 rounded-2xl text-center transition-all duration-200 ${
-                        isSelected
-                          ? "bg-gradient-to-br from-primary/12 via-secondary/10 to-accent/10 border-2 border-primary shadow-lg shadow-primary/15"
-                          : "bg-muted/50 border-2 border-transparent hover:bg-muted hover:border-border/60 hover:shadow-md"
-                      }`}
-                    >
-                      {isBncc && (
-                        <span className="absolute -top-2.5 -right-2 bg-gradient-to-r from-secondary via-accent to-primary text-white text-[9px] font-black px-2.5 py-1 rounded-full leading-none tracking-wider shadow-lg ring-2 ring-white">
-                          BNCC
-                        </span>
-                      )}
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-200 ${
-                        isSelected
-                          ? "bg-gradient-to-br from-primary via-secondary to-accent shadow-md"
-                          : "bg-gradient-to-br from-primary/15 via-secondary/10 to-accent/15 group-hover:from-primary/25 group-hover:via-secondary/20 group-hover:to-accent/25"
-                      }`}>
-                        <Icon size={24} className={`transition-colors duration-200 ${
-                          isSelected ? "text-white" : "text-primary group-hover:text-primary"
-                        }`} strokeWidth={2.2} />
-                      </div>
-                      <span className={`text-xs font-bold leading-tight ${
-                        isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
-                      }`}>{t.label}</span>
-                      {isSelected && (
-                        <motion.div
-                          layoutId="tema-indicator"
-                          className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-6 h-1 rounded-full bg-primary"
-                          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                        />
-                      )}
-                    </motion.button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Habilidade BNCC — navegador completo */}
-            {ano && tema && tema !== "crie-voce-mesmo" && (
-              <BNCCPicker
-                ano={ano}
-                tema={tema}
-                value={habilidade}
-                onChange={setHabilidade}
-              />
-            )}
-
-            {/* Story Textarea - always visible */}
-            {ano && genero && tema && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
               >
                 <label className="flex items-center gap-2 text-sm md:text-base font-bold text-primary mb-2.5">
                   <span className="text-lg">📖</span> Escreva sua história!
                 </label>
-                <p className="text-sm text-muted-foreground font-semibold mb-3">
-                  Escreva uma ideia de história e a IA vai transformar em uma aventura incrível com ilustrações!
-                </p>
                 <textarea
                   value={historiaAluno}
                   onChange={(e) => setHistoriaAluno(e.target.value)}
                   placeholder={`Ex: "O urso polar e seu amigo Natan viviam em uma caverna gelada até que um dia encontraram um mapa misterioso..."`}
-                  className="w-full p-5 rounded-xl bg-muted/70 border-2 border-border/50 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:outline-none font-semibold text-foreground text-[15px] transition-all resize-none min-h-[120px] placeholder:text-muted-foreground/50 placeholder:font-normal"
+                  className="w-full p-5 rounded-xl bg-muted/70 border-2 border-border/50 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:outline-none font-semibold text-foreground text-[15px] transition-all resize-none min-h-[140px] placeholder:text-muted-foreground/50 placeholder:font-normal"
                   maxLength={500}
                 />
                 <p className="text-xs text-muted-foreground mt-2 text-right font-medium">{historiaAluno.length}/500</p>
               </motion.div>
-            )}
 
-            {/* Prompt for "Crie Você Mesmo" topic */}
-            {isCrieVoceMesmo && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                transition={{ duration: 0.3 }}
+              <motion.button
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                whileHover={historiaAluno.trim().length >= 10 && !loading ? { scale: 1.02, y: -2 } : {}}
+                whileTap={historiaAluno.trim().length >= 10 && !loading ? { scale: 0.98 } : {}}
+                disabled={historiaAluno.trim().length < 10 || loading}
+                onClick={handleStart}
+                className="btn-hero w-full h-16 flex items-center justify-center gap-3 text-lg font-bold disabled:opacity-40 disabled:cursor-not-allowed mt-3 rounded-2xl"
               >
-                <label className="flex items-center gap-2 text-sm md:text-base font-bold text-secondary mb-2.5">
-                  <span className="text-lg">✨</span> Tema específico (opcional)
-                </label>
-                <input
-                  value={promptAluno}
-                  onChange={(e) => setPromptAluno(e.target.value)}
-                  placeholder="Ex: dinossauros, espaço, robôs..."
-                  className="w-full h-13 px-5 rounded-xl bg-muted/70 border-2 border-border/50 focus:border-secondary focus:ring-2 focus:ring-secondary/15 focus:outline-none font-semibold text-foreground text-[15px] transition-all"
-                  maxLength={100}
-                />
-              </motion.div>
-            )}
-
-            {/* Start */}
-            <motion.button
-              whileHover={canStart && !loading ? { scale: 1.02, y: -2 } : {}}
-              whileTap={canStart && !loading ? { scale: 0.98 } : {}}
-              disabled={!canStart || loading}
-              onClick={handleStart}
-              className="btn-hero w-full h-16 flex items-center justify-center gap-3 text-lg font-bold disabled:opacity-40 disabled:cursor-not-allowed mt-3 rounded-2xl"
-            >
-              {loading ? (
-                <>
-                  <Loader2 size={20} className="animate-spin" />
-                  Gerando atividade...
-                </>
-              ) : (
+                {loading ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin" />
+                    Gerando atividade...
+                  </>
+                ) : (
                   <>
                     <Sparkles size={20} />
-                    Criar Minha História ✨
+                    Criar Minha História! 🚀
                     <ArrowRight size={20} />
                   </>
-              )}
-            </motion.button>
+                )}
+              </motion.button>
+            </div>
           </div>
         </motion.div>
         </div>

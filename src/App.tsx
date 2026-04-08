@@ -16,6 +16,7 @@ import Estante from "./pages/Estante.tsx";
 import Producoes from "./pages/Producoes.tsx";
 import Vivenciando from "./pages/Vivenciando.tsx";
 import Conquistas from "./pages/Conquistas.tsx";
+import Professor from "./pages/Professor.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { playPipeSound } from "@/lib/sounds";
 
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="/vivenciando" element={<Vivenciando />} />
               <Route path="/conquistas" element={<Conquistas />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/professor" element={<Professor />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
             <TutorWidget />

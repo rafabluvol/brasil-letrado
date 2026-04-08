@@ -3,6 +3,7 @@ import { Trophy, Star, Coins, TrendingUp, Lock, Sparkles, ChevronRight, Award } 
 import { useAuth } from "@/hooks/useAuth";
 import { getAllLevels, getLevelInfo, getUnlockedTrophies, getNextTrophy, TROPHIES, getXpForNextLevel, GROUP_LABELS, type AnimalGroup } from "@/lib/level-system";
 import AnimatedSky from "@/components/AnimatedSky";
+import guaraCoin from "@/assets/guara-coin.png";
 
 const ANIMAL_ORDER: AnimalGroup[] = ["sabia", "tucano", "capivara", "mico", "arara"];
 
@@ -15,7 +16,7 @@ export default function Conquistas() {
   const unlockedTrophies = getUnlockedTrophies(xp);
   const nextTrophy = getNextTrophy(xp);
   const nextLevelXp = getXpForNextLevel(nivel);
-  const progressToNext = nivel < 21 ? Math.min(((xp - levelInfo.brazukasNeeded) / (nextLevelXp - levelInfo.brazukasNeeded)) * 100, 100) : 100;
+  const progressToNext = nivel < 21 ? Math.min(((xp - levelInfo.guarasNeeded) / (nextLevelXp - levelInfo.guarasNeeded)) * 100, 100) : 100;
 
   return (
     <div className="min-h-[calc(100vh-4rem)]">
@@ -51,10 +52,10 @@ export default function Conquistas() {
                 <p className="text-muted-foreground font-semibold mb-4">{levelInfo.descricao}</p>
 
                 <div className="flex flex-wrap items-center gap-4 justify-center md:justify-start mb-4">
-                  <div className="flex items-center gap-2 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200/60 rounded-full px-4 py-2 shadow-sm">
-                    <span className="text-lg">⭐</span>
+                  <div className="flex items-center gap-2 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200/60 rounded-full px-4 py-2 shadow-sm group/coin">
+                    <img src={guaraCoin} alt="Guará" className="w-6 h-6 transition-transform duration-500 group-hover/coin:[transform:rotateY(360deg)]" loading="lazy" />
                     <span className="font-black text-amber-700 text-lg">{xp}</span>
-                    <span className="font-bold text-amber-600 text-sm">Brazukas</span>
+                    <span className="font-bold text-amber-600 text-sm">Guarás</span>
                   </div>
                   <div className="flex items-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/60 rounded-full px-4 py-2 shadow-sm">
                     <Trophy size={18} className="text-purple-500" />
@@ -68,7 +69,7 @@ export default function Conquistas() {
                   <div>
                     <div className="flex items-center justify-between text-xs font-bold text-muted-foreground mb-1.5">
                       <span>Próximo nível: {getLevelInfo(nivel + 1).titulo}</span>
-                      <span>{nextLevelXp - xp} Brazukas restantes</span>
+                      <span>{nextLevelXp - xp} Guarás restantes</span>
                     </div>
                     <div className="w-full h-3 rounded-full bg-muted/60 overflow-hidden">
                       <motion.div
@@ -84,7 +85,7 @@ export default function Conquistas() {
             </div>
           </motion.div>
 
-          {/* What are Brazukas */}
+          {/* What are Guarás */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -95,13 +96,13 @@ export default function Conquistas() {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-100 to-yellow-100 flex items-center justify-center">
                 <Coins size={22} className="text-amber-600" />
               </div>
-              O que são Brazukas?
+              O que são Guarás?
             </h2>
             <div className="grid md:grid-cols-3 gap-5">
               {[
-                { icon: "⭐", title: "Moeda do Saber", desc: "Brazukas são as moedas que você ganha ao completar atividades, responder exercícios corretamente e ler histórias. Quanto mais você aprende, mais Brazukas acumula!" },
+                { icon: "⭐", title: "Moeda do Saber", desc: "Guarás são as moedas que você ganha ao completar atividades, responder exercícios corretamente e ler histórias. Quanto mais você aprende, mais Guarás acumula!" },
                 { icon: "📈", title: "Como Ganhar", desc: "Complete atividades (+50-100), acerte exercícios (+10-20 cada), leia histórias em voz alta (+30), explore novos temas (+15 bônus) e mantenha sequências de acertos!" },
-                { icon: "🎁", title: "Para que Servem", desc: "Seus Brazukas desbloqueiam novos níveis, transformam seu tutor em novos animais incríveis e abrem troféus de inventores famosos!" },
+                { icon: "🎁", title: "Para que Servem", desc: "Seus Guarás desbloqueiam novos níveis, transformam seu tutor em novos animais incríveis e abrem troféus de inventores famosos!" },
               ].map((item, i) => (
                 <motion.div
                   key={item.title}
@@ -174,7 +175,7 @@ export default function Conquistas() {
                             {lvl.emoji} {lvl.titulo}
                           </span>
                           <span className={`text-[10px] font-semibold ${isUnlocked ? "text-primary" : "text-muted-foreground"}`}>
-                            {lvl.brazukasNeeded === 0 ? "Início" : `${lvl.brazukasNeeded} ⭐`}
+                            {lvl.guarasNeeded === 0 ? "Início" : `${lvl.guarasNeeded} ⭐`}
                           </span>
                           {!isUnlocked && (
                             <Lock size={14} className="absolute top-2 right-2 text-muted-foreground/60" />
@@ -202,12 +203,12 @@ export default function Conquistas() {
               Troféus de Inventores
             </h2>
             <p className="text-sm text-muted-foreground mb-8 ml-13">
-              Desbloqueie troféus de grandes inventores e cientistas ao acumular Brazukas!
+              Desbloqueie troféus de grandes inventores e cientistas ao acumular Guarás!
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {TROPHIES.map((trophy, i) => {
-                const isUnlocked = xp >= trophy.brazukasRequired;
+                const isUnlocked = xp >= trophy.guarasRequired;
                 return (
                   <motion.div
                     key={trophy.id}
@@ -230,7 +231,7 @@ export default function Conquistas() {
                       {trophy.title.replace("Troféu ", "")}
                     </span>
                     <span className={`text-xs font-semibold ${isUnlocked ? "text-amber-600" : "text-muted-foreground"}`}>
-                      {trophy.brazukasRequired} ⭐
+                      {trophy.guarasRequired} ⭐
                     </span>
                     {isUnlocked && (
                       <p className="text-[11px] text-muted-foreground text-center leading-relaxed mt-1">
@@ -256,7 +257,7 @@ export default function Conquistas() {
               >
                 <Sparkles size={18} className="text-amber-500" />
                 <span className="text-sm font-semibold text-amber-700">
-                  Próximo troféu: <strong>{nextTrophy.title}</strong> — faltam {nextTrophy.brazukasRequired - xp} Brazukas!
+                  Próximo troféu: <strong>{nextTrophy.title}</strong> — faltam {nextTrophy.guarasRequired - xp} Guarás!
                 </span>
               </motion.div>
             )}
@@ -277,12 +278,12 @@ export default function Conquistas() {
             </h2>
             <div className="grid md:grid-cols-2 gap-5">
               {[
-                { emoji: "📚", title: "Complete Atividades", desc: "Cada atividade completa rende entre 50 e 100 Brazukas, dependendo do seu desempenho nos exercícios." },
-                { emoji: "✅", title: "Acerte Exercícios", desc: "Cada exercício correto vale de 10 a 20 Brazukas. Quanto mais difícil, mais você ganha!" },
-                { emoji: "🎙️", title: "Leia em Voz Alta", desc: "A leitura em voz alta avaliada pela IA rende 30 Brazukas extras e treina sua fluência!" },
-                { emoji: "🔄", title: "Explore Temas Novos", desc: "Diversificar os temas gera bônus de 15 Brazukas para incentivar a curiosidade." },
+                { emoji: "📚", title: "Complete Atividades", desc: "Cada atividade completa rende entre 50 e 100 Guarás, dependendo do seu desempenho nos exercícios." },
+                { emoji: "✅", title: "Acerte Exercícios", desc: "Cada exercício correto vale de 10 a 20 Guarás. Quanto mais difícil, mais você ganha!" },
+                { emoji: "🎙️", title: "Leia em Voz Alta", desc: "A leitura em voz alta avaliada pela IA rende 30 Guarás extras e treina sua fluência!" },
+                { emoji: "🔄", title: "Explore Temas Novos", desc: "Diversificar os temas gera bônus de 15 Guarás para incentivar a curiosidade." },
                 { emoji: "🐦➡️🦜➡️🦫➡️🐒➡️🦅", title: "Evolua seu Tutor", desc: "A cada grupo de níveis, seu tutor se transforma em um novo animal da fauna brasileira com estilos únicos!" },
-                { emoji: "🏆", title: "Conquiste Troféus", desc: "A cada marco de Brazukas, você desbloqueia o troféu de um grande inventor ou cientista da história!" },
+                { emoji: "🏆", title: "Conquiste Troféus", desc: "A cada marco de Guarás, você desbloqueia o troféu de um grande inventor ou cientista da história!" },
               ].map((item, i) => (
                 <motion.div
                   key={item.title}

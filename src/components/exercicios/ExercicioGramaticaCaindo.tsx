@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 
 interface PalavraCaindo {
   palavra: string;
@@ -190,14 +190,33 @@ export default function ExercicioGramaticaCaindo({ textoContexto, classeAlvo, pa
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className={`text-center py-3 px-4 rounded-xl font-bold text-sm ${
-            score >= Math.ceil(totalTarget * 0.6) ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-          }`}
+          className="flex flex-col items-center gap-3"
         >
-          {score >= Math.ceil(totalTarget * 0.6) ? (
-            <><CheckCircle2 className="inline mr-2" size={16} />Ótimo! Você acertou {score} de {totalTarget}! 🎉</>
-          ) : (
-            <>Você acertou {score} de {totalTarget}. Continue praticando! 💪</>
+          <div className={`w-full text-center py-3 px-4 rounded-xl font-bold text-sm ${
+            score >= Math.ceil(totalTarget * 0.6) ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+          }`}>
+            {score >= Math.ceil(totalTarget * 0.6) ? (
+              <><CheckCircle2 className="inline mr-2" size={16} />Ótimo! Você acertou {score} de {totalTarget}! 🎉</>
+            ) : (
+              <>Você acertou {score} de {totalTarget}. Continue praticando! 💪</>
+            )}
+          </div>
+          {score < Math.ceil(totalTarget * 0.6) && (
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                setFallingWords([]);
+                setScore(0);
+                setMisses(0);
+                setWordIndex(0);
+                setGameOver(false);
+                lastTime.current = 0;
+              }}
+              className="btn-hero px-8 py-3 flex items-center gap-2 text-sm"
+            >
+              <RotateCcw size={16} /> Tentar Novamente
+            </motion.button>
           )}
         </motion.div>
       )}
