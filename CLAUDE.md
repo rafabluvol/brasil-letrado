@@ -21,7 +21,7 @@ O mascote é o **Piu-Piu**, um passarinho verde. Toda mensagem de feedback da IA
 | IA — Texto | Google Gemini via gateway Lovable (`ai.gateway.lovable.dev`) — **PENDENTE MIGRAÇÃO** |
 | IA — Imagem | Google Gemini Image via gateway Lovable — **PENDENTE MIGRAÇÃO** |
 | IA — TTS | ElevenLabs API direta (já funciona, não migrar) |
-| IA — Vídeo | fal.ai API direta (já funciona, não migrar) |
+| IA — Vídeo | Replicate API direta (já funciona, não migrar) |
 | Build | Vite 5 / `npm run dev` |
 | Testes | Vitest + Testing Library + Playwright |
 
@@ -31,7 +31,7 @@ O mascote é o **Piu-Piu**, um passarinho verde. Toda mensagem de feedback da IA
 
 ```
 supabase/
-  functions/          ← 7 Edge Functions (Deno)
+  functions/          ← 8 Edge Functions (Deno)
   migrations/         ← SQL migrations do banco
 src/
   pages/              ← Atividade, Dashboard, Estante, Vivenciando, etc.
@@ -104,7 +104,18 @@ src/
 
 ---
 
-### 6. `elevenlabs-tts` ← FUNCIONA, não migrar
+### 6. `generate-scene-narration` ← usa gateway Lovable
+**O que faz:** Gera narração estruturada com legendas para cada cena do vídeo. Divide o texto da cena em 2–4 segmentos com tempo de exibição calibrado para crianças.
+
+**Inputs:** `sceneText`, `sceneTextEn`, `sceneIndex`, `totalScenes`, `level`
+
+**Output:** JSON com `{ subtitles: [{ text_pt, text_en, display_seconds }], narration_text, narration_text_en }`
+
+**IA usada:** `google/gemini-2.5-flash` via gateway Lovable
+
+---
+
+### 7. `elevenlabs-tts` ← FUNCIONA, não migrar
 **O que faz:** Text-to-speech usando ElevenLabs. Gera áudio MP3 da história para o aluno ouvir antes de ler. Persiste no Supabase Storage (`production-media`).
 
 **API:** ElevenLabs direta (`xi-api-key`), modelo `eleven_multilingual_v2`
@@ -113,10 +124,12 @@ src/
 
 ---
 
-### 7. `generate-scene-video` ← FUNCIONA, não migrar
-**O que faz:** Gera vídeo curto de uma cena (image-to-video) usando fal.ai. Usa dois modelos com fallback: `fal-ai/minimax/video-01/image-to-video` → `fal-ai/kling-video/v1.6/standard/image-to-video`.
+### 8. `generate-scene-video` ← FUNCIONA, não migrar
+**O que faz:** Gera vídeo curto de uma cena (image-to-video) usando Replicate. Tenta dois modelos em sequência com retry: `wan-video/wan-2.2-i2v-fast` → `kwaivgi/kling-v1.6-standard`. Persiste o vídeo no bucket `production-media`.
 
-**API:** fal.ai direta
+**Env:** `REPLICATE_API_TOKEN`
+
+**API:** Replicate direta (`https://api.replicate.com/v1/models/{model}/predictions`)
 
 ---
 
@@ -144,7 +157,8 @@ Storage buckets:
 - Exercício de leitura em voz alta com análise automática (GravadorLeitura + analyze-leitura)
 - Livrinho ilustrado de 4 páginas com imagens geradas por IA
 - TTS com ElevenLabs para narração das histórias
-- Geração de vídeo de cena (fal.ai)
+- Geração de vídeo de cena (Replicate: wan-video + kling)
+- Narração estruturada com legendas por cena (generate-scene-narration)
 - Atividades offline para professores (generate-vivenciando)
 - Dashboard com múltiplas abas (desempenho, habilidades BNCC, etc.)
 - Tabelas SAEB no banco: `saeb_descritores` e `student_saeb_performance` (migração aplicada em 2026-04-07)
@@ -158,7 +172,7 @@ Storage buckets:
 
 ### PRIORIDADE 1 — Migrar gateway Lovable para Google Gemini direto
 
-**Problema:** As 5 edge functions com IA de texto/imagem usam `https://ai.gateway.lovable.dev/v1/chat/completions` com `LOVABLE_API_KEY`. Esse gateway pode ser descontinuado/cobrado pelo Lovable. A meta é chamar a API do Google Gemini diretamente.
+**Problema:** As 6 edge functions com IA de texto/imagem usam `https://ai.gateway.lovable.dev/v1/chat/completions` com `LOVABLE_API_KEY`. Esse gateway pode ser descontinuado/cobrado pelo Lovable. A meta é chamar a API do Google Gemini diretamente.
 
 **Funções afetadas:**
 1. `generate-atividade` — modelo `google/gemini-3-flash-preview`
@@ -166,6 +180,7 @@ Storage buckets:
 3. `generate-story-image` — modelo `google/gemini-3.1-flash-image-preview`
 4. `analyze-leitura` — modelo `google/gemini-3-flash-preview`
 5. `generate-vivenciando` — modelo `google/gemini-2.5-flash`
+6. `generate-scene-narration` — modelo `google/gemini-2.5-flash`
 
 **Como migrar (texto):**
 - Trocar URL: `https://ai.gateway.lovable.dev/v1/chat/completions` → `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`
@@ -182,6 +197,9 @@ Storage buckets:
 **Env vars necessárias no Supabase:**
 ```
 GEMINI_API_KEY=<sua chave do Google AI Studio>
+ELEVENLABS_API_KEY=<chave ElevenLabs>
+ELEVENLABS_VOICE_ID=<opcional, default: Xb7hH8MSUJpSbSDYk0k2>
+REPLICATE_API_TOKEN=<chave Replicate>
 ```
 Remover `LOVABLE_API_KEY` após migração completa.
 
@@ -200,7 +218,7 @@ Banco já foi migrado. Falta:
 
 ## Avisos Importantes
 
-- **Não alterar** `elevenlabs-tts` nem `generate-scene-video` — usam APIs próprias e funcionam
+- **Não alterar** `elevenlabs-tts` nem `generate-scene-video` — usam APIs próprias (ElevenLabs e Replicate) e funcionam
 - **Modelo de imagem:** O gateway usava nomes proprietários (`google/gemini-2.5-flash-image`). Na API do Gemini o modelo equivalente atual é `gemini-2.0-flash-exp-image-generation` — confirmar disponibilidade antes de migrar
 - **Fallback de imagem:** Todas as funções de imagem têm fallback para `placehold.co` quando a geração falha — manter esse comportamento na migração
 - **Timeout:** `generate-livrinho` usa `IMAGE_TIMEOUT_MS = 18000ms` e `IMAGE_ATTEMPTS = 2` por imagem — respeitar esses parâmetros na migração
