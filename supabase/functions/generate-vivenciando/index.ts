@@ -12,8 +12,8 @@ serve(async (req) => {
 
   try {
     const { titulo, historia_texto, ano, genero } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("Missing API key");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not configured");
 
     const prompt = `Você é um pedagogo criativo especialista em educação infantil brasileira (${ano}º ano do ensino fundamental).
 
@@ -48,29 +48,26 @@ Responda APENAS com JSON válido no formato:
   ]
 }`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: "Você é um pedagogo criativo. Responda apenas em JSON válido." },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.9,
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: "Você é um pedagogo criativo. Responda apenas em JSON válido." }] },
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.9 },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`AI API error: ${response.status} - ${errText}`);
+      throw new Error(`Gemini API error: ${response.status} - ${errText}`);
     }
 
     const aiData = await response.json();
-    let content = aiData.choices?.[0]?.message?.content || "";
+    let content = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
     
     // Clean markdown fences
     content = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();

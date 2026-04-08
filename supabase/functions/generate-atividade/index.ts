@@ -98,8 +98,8 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     const TEMAS_MAP: Record<string, string> = {
       "portugues": "Língua Portuguesa",
@@ -581,20 +581,17 @@ ${hasStory ? "- TAMANHO DAS CENAS (CRÍTICO): O campo \"texto\" de CADA storyPag
       ? `Crie uma atividade de ${genero} para o ${ano}º ano sobre: ${userPrompt}. Gere 5 exercícios (2 do gênero, 2 de interpretação BNCC, 1 de senso crítico).`
       : `Crie uma atividade de ${genero} para o ${ano}º ano com tema de ${temaDescricao}. O texto DEVE ser do gênero ${genero} com elementos típicos. Gere 5 exercícios (2 do gênero, 2 de interpretação BNCC, 1 de senso crítico). Seja criativo e original.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        }),
+      }
+    );
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -602,29 +599,15 @@ ${hasStory ? "- TAMANHO DAS CENAS (CRÍTICO): O campo \"texto\" de CADA storyPag
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos insuficientes." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
       const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
+      console.error("Gemini API error:", response.status, t);
       return new Response(JSON.stringify({ error: "Erro ao gerar atividade" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let data;
-    try {
-      data = await response.json();
-    } catch {
-      const rawText = await response.text();
-      console.error("Failed to parse gateway response as JSON, raw length:", rawText.length);
-      return new Response(JSON.stringify({ error: "Resposta inválida da IA. Tente novamente." }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const content = data.choices?.[0]?.message?.content;
+    const data = await response.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!content) {
       return new Response(JSON.stringify({ error: "Resposta vazia da IA" }), {

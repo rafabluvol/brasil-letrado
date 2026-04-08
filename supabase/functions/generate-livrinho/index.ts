@@ -86,23 +86,22 @@ async function generateImage(apiKey: string, description: string): Promise<strin
   for (let attempt = 0; attempt < IMAGE_ATTEMPTS; attempt++) {
     try {
       const imgResponse = await withTimeout(
-        fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image",
-            messages: [
-              {
-                role: "user",
-                content: `Generate a children's book page illustration: ${description}. Style: colorful watercolor, fairy tale illustration, whimsical, cute characters, warm colors, suitable for children ages 6-10. No text in the image.`,
-              },
-            ],
-            modalities: ["image", "text"],
-          }),
-        }),
+        fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: "user",
+                  parts: [{ text: `Generate a children's book page illustration: ${description}. Style: colorful watercolor, fairy tale illustration, whimsical, cute characters, warm colors, suitable for children ages 6-10. No text in the image.` }],
+                },
+              ],
+              generationConfig: { responseModalities: ["Text", "Image"] },
+            }),
+          }
+        ),
         IMAGE_TIMEOUT_MS,
       );
 
@@ -119,9 +118,10 @@ async function generateImage(apiKey: string, description: string): Promise<strin
       }
 
       const imgData = await withTimeout(imgResponse.json(), IMAGE_TIMEOUT_MS);
-      const img = imgData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      if (typeof img === "string" && img.startsWith("data:image/")) {
-        return img;
+      const parts = imgData?.candidates?.[0]?.content?.parts || [];
+      const imagePart = parts.find((p: { inlineData?: { data: string; mimeType: string } }) => p.inlineData);
+      if (imagePart) {
+        return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
       }
     } catch (err) {
       console.error(`Image generation attempt ${attempt + 1} failed:`, err);
@@ -170,8 +170,8 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -222,32 +222,22 @@ REGRAS:
 - Estilo visual: ilustração infantil colorida, estilo livro de fábulas, personagens fofos e expressivos
 - A história deve ter começo, meio 1, meio 2 e fim claros`;
 
-    const storyResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: "Você cria livrinhos infantis encantadores. Retorne apenas JSON válido." },
-          { role: "user", content: storyPrompt },
-        ],
-      }),
-    });
+    const storyResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: "Você cria livrinhos infantis encantadores. Retorne apenas JSON válido." }] },
+          contents: [{ role: "user", parts: [{ text: storyPrompt }] }],
+        }),
+      }
+    );
 
     if (!storyResponse.ok) {
-      const status = storyResponse.status;
-      if (status === 429) {
+      if (storyResponse.status === 429) {
         return new Response(JSON.stringify({ error: "Muitas requisições. Tente novamente." }), {
           status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos insuficientes." }), {
-          status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -255,7 +245,7 @@ REGRAS:
     }
 
     const storyData = await storyResponse.json();
-    const storyContent = storyData.choices?.[0]?.message?.content;
+    const storyContent = storyData.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!storyContent) throw new Error("Resposta vazia ao gerar história");
 
     let livro: any;
@@ -284,7 +274,7 @@ REGRAS:
         }
 
         console.log(`Generating image for page ${pagina.numero}...`);
-        const base64Img = await generateImage(LOVABLE_API_KEY, pagina.descricaoImagem);
+        const base64Img = await generateImage(GEMINI_API_KEY, pagina.descricaoImagem);
         const uploadedUrl = base64Img
           ? await uploadBase64ToStorage(supabase, base64Img, `${bookId}/page-${pagina.numero}`)
           : "";

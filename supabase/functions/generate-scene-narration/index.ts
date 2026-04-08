@@ -12,8 +12,8 @@ serve(async (req) => {
   try {
     const { sceneText, sceneTextEn, sceneIndex, totalScenes, level } = await req.json();
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not set");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not set");
 
     if (!sceneText || typeof sceneText !== "string") {
       return new Response(JSON.stringify({ error: "sceneText is required" }), {
@@ -43,32 +43,31 @@ Rules:
 - Keep it engaging and expressive
 - The narration should feel warm, dramatic and exciting for children`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Scene ${(sceneIndex || 0) + 1}/${totalScenes || 4}.\nPortuguês: ${sceneText}${sceneTextEn ? `\nEnglish: ${sceneTextEn}` : ""}`,
-          },
-        ],
-        temperature: 0.3,
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `Scene ${(sceneIndex || 0) + 1}/${totalScenes || 4}.\nPortuguês: ${sceneText}${sceneTextEn ? `\nEnglish: ${sceneTextEn}` : ""}` }],
+            },
+          ],
+          generationConfig: { temperature: 0.3 },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      throw new Error(`Lovable AI error ${response.status}: ${errText}`);
+      throw new Error(`Gemini API error ${response.status}: ${errText}`);
     }
 
     const result = await response.json();
-    const content = result.choices?.[0]?.message?.content || "";
+    const content = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     const narrationData = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
 

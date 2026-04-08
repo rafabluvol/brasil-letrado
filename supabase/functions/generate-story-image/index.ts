@@ -37,31 +37,27 @@ serve(async (req) => {
       else aspectInstruction = `The image MUST be roughly square with aspect ratio ${targetWidth}:${targetHeight}.`;
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+
+    const imagePrompt = `Generate a WIDE LANDSCAPE children's book illustration. CRITICAL: The output image MUST be in WIDE PANORAMIC LANDSCAPE orientation - the width MUST be at least 2x the height (like a movie theater screen). DO NOT generate a square or portrait image under any circumstances.
+
+${characterSheet ? `CHARACTER REFERENCE (draw these characters EXACTLY as described): ${characterSheet}. ` : ""}Scene: ${description}.
+
+Style: colorful watercolor, fairy tale illustration, whimsical, cute characters, warm colors, suitable for children ages 6-10. No text in the image. All characters and important elements must be centered in the middle 60% of the frame with generous safe margins. Keep character appearances perfectly consistent across scenes.`;
 
     const imgResponse = await withTimeout(
-      fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-3.1-flash-image-preview",
-          messages: [
-            {
-              role: "user",
-              content: `Generate a WIDE LANDSCAPE children's book illustration. CRITICAL: The output image MUST be in WIDE PANORAMIC LANDSCAPE orientation - the width MUST be at least 2x the height (like a movie theater screen). DO NOT generate a square or portrait image under any circumstances.
-
-${characterSheet ? `CHARACTER REFERENCE (draw these characters EXACTLY as described): ${characterSheet}. ` : ''}Scene: ${description}.
-
-Style: colorful watercolor, fairy tale illustration, whimsical, cute characters, warm colors, suitable for children ages 6-10. No text in the image. All characters and important elements must be centered in the middle 60% of the frame with generous safe margins. Keep character appearances perfectly consistent across scenes.`,
-            },
-          ],
-          modalities: ["image", "text"],
-        }),
-      }),
+      fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: imagePrompt }] }],
+            generationConfig: { responseModalities: ["Text", "Image"] },
+          }),
+        }
+      ),
       IMAGE_TIMEOUT_MS,
     );
 
@@ -77,7 +73,11 @@ Style: colorful watercolor, fairy tale illustration, whimsical, cute characters,
     }
 
     const imgData = await withTimeout(imgResponse.json(), IMAGE_TIMEOUT_MS);
-    const base64Url = imgData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const parts = imgData?.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find((p: { inlineData?: { data: string; mimeType: string } }) => p.inlineData);
+    const base64Url = imagePart
+      ? `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`
+      : undefined;
 
     if (!base64Url || !base64Url.startsWith("data:image/")) {
       // Return a placeholder
