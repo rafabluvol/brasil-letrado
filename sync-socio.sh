@@ -86,20 +86,20 @@ git pull origin main --quiet
 success "Branch main atualizado"
 
 # ── 3. Descompacta o ZIP ───────────────────────────────────────────────────────
-info "Descompactando: $ZIP_PATH"
-unzip -q "$ZIP_PATH" -d "$TMP_DIR"
+info "Descompactando: ${ZIP_PATH}"
+unzip -q "${ZIP_PATH}" -d "${TMP_DIR}"
 
 # Detecta pasta raiz dentro do ZIP (alguns ZIPs colocam tudo numa subpasta)
-ZIP_ROOT="$TMP_DIR"
-SUBDIRS=("$TMP_DIR"/*/")
+ZIP_ROOT="${TMP_DIR}"
+SUBDIRS=("${TMP_DIR}"/*)
 if [[ -d "${SUBDIRS[0]}" ]]; then
-  SUBDIR_COUNT=$(find "$TMP_DIR" -maxdepth 1 -mindepth 1 -type d | wc -l)
+  SUBDIR_COUNT=$(find "${TMP_DIR}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')
   if [[ "$SUBDIR_COUNT" -eq 1 ]]; then
     ZIP_ROOT="${SUBDIRS[0]}"
-    info "Conteúdo do ZIP está em subpasta: $(basename "$ZIP_ROOT")"
+    info "Conteúdo do ZIP está em subpasta: $(basename "${ZIP_ROOT}")"
   fi
 fi
-success "ZIP extraído em $TMP_DIR"
+success "ZIP extraído em ${TMP_DIR}"
 
 # ── 4. Monta o rsync excludes a partir de PROTECTED ───────────────────────────
 EXCLUDES=()
@@ -120,7 +120,7 @@ rsync -a --delete \
   "${EXCLUDES[@]}" \
   --exclude=".git/" \
   --exclude="node_modules/" \
-  "$ZIP_ROOT" "$REPO_ROOT/"
+  "${ZIP_ROOT}/" "${REPO_ROOT}/"
 
 success "Arquivos copiados"
 
